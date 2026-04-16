@@ -2,6 +2,8 @@
 
 一款专为 MUD 游戏打造的翻译终端, 帮你跨越语言障碍, 玩转英文Mud.
 
+<img src="screenshot.png" width="600">
+
 ## 功能特性
 
 - 用 Go 语言实现的 Telnet 客户端
