@@ -1,0 +1,6 @@
+bin/zmud
+.aider.tags*
+cmd/cmd
+zmud
+*.db
+.claude
