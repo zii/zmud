@@ -45,9 +45,10 @@ type GoogleConfig struct {
 
 // Server 表示一个 MUD 服务器
 type Server struct {
-	Name string `yaml:"name"` // 服务器显示名称
-	Host string `yaml:"host"` // 服务器主机地址
-	Port string `yaml:"port"` // 服务器端口号
+	Name    string `yaml:"name"`    // 服务器显示名称
+	Host    string `yaml:"host"`    // 服务器主机地址
+	Port    string `yaml:"port"`    // 服务器端口号
+	Charset string `yaml:"charset"` // 服务器编码，如 "gb2312"，空则不处理
 }
 
 // LoadConfig 从 ~/.zmud/setting.yaml 加载配置，如果文件不存在则返回默认配置

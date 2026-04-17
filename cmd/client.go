@@ -20,6 +20,9 @@ import (
 	"zmud/lib/liner"
 
 	"golang.org/x/term"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/encoding/traditionalchinese"
+	"golang.org/x/text/transform"
 )
 
 // 服务器一次性响应的文本
@@ -74,6 +77,30 @@ func (c *Client) Connect() error {
 		return err
 	}
 	c.conn = conn
+	return nil
+}
+
+// 根据配置获取解码器，charset 为空则返回 nil（不转换）
+func (c *Client) getDecoder() transform.Transformer {
+	charset := strings.ToLower(c.server.Charset)
+	if charset == "gb" || charset == "gbk" {
+		return simplifiedchinese.GBK.NewDecoder()
+	}
+	if charset == "big5" {
+		return traditionalchinese.Big5.NewDecoder()
+	}
+	return nil
+}
+
+// 根据配置获取编码器，charset 为空则返回 nil（不转换）
+func (c *Client) getEncoder() transform.Transformer {
+	charset := strings.ToLower(c.server.Charset)
+	if charset == "gb" || charset == "gbk" {
+		return simplifiedchinese.GBK.NewEncoder()
+	}
+	if charset == "big5" {
+		return traditionalchinese.Big5.NewEncoder()
+	}
 	return nil
 }
 
@@ -223,10 +250,18 @@ func (c *Client) readInput() {
 				c.doSystemCmd(input)
 				continue
 			}
+			// 发送到服务器
+			if encoder := c.getEncoder(); encoder != nil {
+				out, _, err := transform.Bytes(encoder, []byte(input+"\r\n"))
+				if err == nil {
+					c.conn.Write(out)
+				} else {
+					fmt.Fprint(c.conn, input, "\r\n")
+				}
+			} else {
+				fmt.Fprint(c.conn, input, "\r\n")
+			}
 		}
-		// 发送到服务器
-		fmt.Fprint(c.conn, input, "\r\n")
-		//c.conn.Write([]byte(input + "\r\n"))
 	}
 
 	// 保存历史记录
@@ -386,6 +421,8 @@ func (c *Client) redraw() {
 func (c *Client) readServer() {
 	var tmp string
 	buf := make([]byte, 4096)
+	// 根据配置选择解码器
+	decoder := c.getDecoder()
 	for {
 		n, err := c.conn.Read(buf)
 		if err != nil {
@@ -394,6 +431,13 @@ func (c *Client) readServer() {
 		}
 		data := lib.FilterIAC(buf[:n])
 		text := string(data)
+		// 如果配置了 charset，则转换编码
+		if decoder != nil {
+			out, _, err := transform.Bytes(decoder, data)
+			if err == nil {
+				text = string(out)
+			}
+		}
 		// 服务器会返回各式各样的换行, 比如"\r\n", "\n\r", "\r\r\n\n", "\r\n\r\n", 要把\r删了统一成\n
 		text = lib.RemoveCr(text)
 		// 处理拼接: 如果行尾以小写字母结尾, 就暂存

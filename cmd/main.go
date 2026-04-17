@@ -71,7 +71,11 @@ func addNewServer(cfg *lib.Config) {
 	var port string
 	fmt.Scanln(&port)
 
-	server := lib.Server{Name: name, Host: host, Port: port}
+	fmt.Print("请输入服务器编码 (gb/big5，回车跳过): ")
+	var charset string
+	fmt.Scanln(&charset)
+
+	server := lib.Server{Name: name, Host: host, Port: port, Charset: charset}
 	cfg.Servers = append(cfg.Servers, server)
 
 	if err := lib.SaveConfig(cfg); err != nil {
