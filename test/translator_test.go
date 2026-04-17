@@ -106,3 +106,27 @@ func TestTranslatorTranslateBatchCache(t *testing.T) {
 		t.Logf("缓存生效，第二次更快")
 	}
 }
+
+func TestTranslatorIsCached(t *testing.T) {
+	tr := getTranslator(t)
+	if tr == nil {
+		return
+	}
+	testStr := "test is cached " + fmt.Sprintf("%d", time.Now().UnixNano())
+
+	// 初始未缓存
+	if tr.IsCached(testStr) {
+		t.Error("expected false for uncached string")
+	}
+
+	// 翻译后应该被缓存
+	_, err := tr.Translate(testStr)
+	if err != nil {
+		t.Skipf("跳过翻译测试: %v", err)
+	}
+
+	// 现在应该已缓存
+	if !tr.IsCached(testStr) {
+		t.Error("expected true after translation")
+	}
+}
