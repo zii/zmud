@@ -90,13 +90,13 @@ func (c *Client) doSystemCmd(input string) {
 		fmt.Printf("当前引擎: %s\n", c.tr.GetEngine())
 	} else if m, ok := strings.CutPrefix(input, "/e "); ok {
 		switch m {
-		case "baidu", "deepseek", "kilo":
+		case "baidu", "deepseek", "kilo", "google":
 			c.tr.SetEngine(m)
 			fmt.Printf("更换引擎 %s 成功!\n", m)
 		case "update":
 			lib.InputEngine(c.tr.Config)
 		default:
-			fmt.Println("切换引擎: baidu, deepseek, kilo")
+			fmt.Println("切换引擎: baidu, deepseek, kilo, google")
 			fmt.Println("/e update - 更新引擎参数")
 		}
 	} else if m, ok := strings.CutPrefix(input, "/ask "); ok {
@@ -276,9 +276,6 @@ func (c *Client) warmup(lines []string) {
 	if c.lang == lib.LSRC || len(lines) <= 5 || c.tr.GetEngine() == "" {
 		return
 	}
-	if len(lines) > api.MaxBatchSize && !c.tr.IsCached(lines[0]) {
-		fmt.Println("翻译中...")
-	}
 	var srcs []string
 	for i, line := range lines {
 		if line == "" {
@@ -314,7 +311,7 @@ func (c *Client) warmup(lines []string) {
 // 翻译一段文本, 返回输出的实际行数
 func (c *Client) Translate(text string) int {
 	lines := strings.Split(text, "\n")
-	c.warmup(lines)
+	go c.warmup(lines)
 	outn := len(lines)
 	preColor := ""
 	for i, line := range lines {

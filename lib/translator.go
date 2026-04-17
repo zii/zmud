@@ -18,6 +18,7 @@ type Translator struct {
 	baidu    *api.Baidu
 	deepseek *api.DeepSeek
 	kilo     *api.Kilo
+	google   *api.Google
 }
 
 // NewTranslator 创建翻译器实例，缓存文件放在 ~/.zmud/cache.db
@@ -40,6 +41,7 @@ func NewTranslator(cfg *Config) *Translator {
 		baidu:    api.NewBaidu(cfg.Baidu.AppID, cfg.Baidu.Secret),
 		deepseek: api.NewDeepSeek(cfg.DeepSeek.APIKey),
 		kilo:     api.NewKilo(cfg.Kilo.APIKey, cfg.Kilo.Model, cfg.Kilo.Proxy),
+		google:   api.NewGoogle(cfg.Google.APIKey, cfg.Google.Proxy),
 	}
 }
 
@@ -85,6 +87,8 @@ func (t *Translator) Translate(src string) (string, error) {
 		result, err = t.deepseek.Translate(src)
 	} else if engine == "kilo" {
 		result, err = t.kilo.Translate(src)
+	} else if engine == "google" {
+		result, err = t.google.Translate(src)
 	} else {
 		return "", fmt.Errorf("未知翻译引擎：%s", engine)
 	}
@@ -150,6 +154,8 @@ func (t *Translator) TranslateBatch(srcs []string) ([]string, error) {
 		apiResults, err = t.deepseek.TranslateBatch(srcsMissed)
 	} else if engine == "kilo" {
 		apiResults, err = t.kilo.TranslateBatch(srcsMissed)
+	} else if engine == "google" {
+		apiResults, err = t.google.TranslateBatch(srcsMissed)
 	} else {
 		return nil, fmt.Errorf("未知翻译引擎：%s", engine)
 	}

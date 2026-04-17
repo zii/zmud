@@ -11,10 +11,11 @@ import (
 // Config 表示整个应用的配置
 type Config struct {
 	Language string         `yaml:"language"` // 界面语言，如 "cn" 表示中文
-	Engine   string         `yaml:"engine"`   // 翻译引擎："baidu"、"deepseek"、"kilo" 或 ""（空值表示禁用翻译）
+	Engine   string         `yaml:"engine"`   // 翻译引擎："baidu"、"deepseek"、"kilo"、"google" 或 ""（空值表示禁用翻译）
 	DeepSeek DeepSeekConfig `yaml:"deepseek"` // DeepSeek 翻译配置
 	Baidu    BaiduConfig    `yaml:"baidu"`    // 百度翻译配置
 	Kilo     KiloConfig     `yaml:"kilo"`     // Kilo 翻译配置
+	Google   GoogleConfig   `yaml:"google"`   // Google 翻译配置
 	Servers  []Server       `yaml:"servers"`  // 服务器列表
 }
 
@@ -34,6 +35,12 @@ type KiloConfig struct {
 type BaiduConfig struct {
 	AppID  string `yaml:"app_id"` // 百度翻译应用 ID，必须配置
 	Secret string `yaml:"secret"` // 百度翻译密钥，必须配置
+}
+
+// GoogleConfig 包含 Google 翻译 API 的配置
+type GoogleConfig struct {
+	APIKey string `yaml:"api_key"` // Google API 密钥，必须配置
+	Proxy  string `yaml:"proxy"`   // 代理地址，如 http://127.0.0.1:7890
 }
 
 // Server 表示一个 MUD 服务器
@@ -120,29 +127,32 @@ func isConfigComplete(config *Config) bool {
 		return config.DeepSeek.APIKey != ""
 	case "kilo":
 		return config.Kilo.APIKey != ""
+	case "google":
+		return config.Google.APIKey != ""
 	default:
 		return false // 未知引擎视为不完整
 	}
 }
 
 // promptEngine 选择翻译引擎，返回用户选择的引擎名称
-// 返回值：引擎名称 ("baidu", "deepseek", "kilo", "") 和是否取消
+// 返回值：引擎名称 ("baidu", "deepseek", "kilo", "google", "") 和是否取消
 func promptEngine() (string, bool) {
 	fmt.Println("请选择翻译引擎：")
 	fmt.Println("1. 百度翻译 (需要 AppID 和 Secret)")
 	fmt.Println("2. DeepSeek (需要 API Key)")
 	fmt.Println("3. Kilo (需要 API Key)")
-	fmt.Println("4. 不用翻译")
+	fmt.Println("4. Google (需要 API Key)")
+	fmt.Println("5. 不用翻译")
 
 	var choice int
 	for {
-		fmt.Printf("选择 [1/4]: ")
+		fmt.Printf("选择 [1/5]: ")
 		if _, err := fmt.Scanln(&choice); err != nil {
 			fmt.Println("请输入有效的数字")
 			continue
 		}
-		if choice < 1 || choice > 4 {
-			fmt.Println("请选择 1-4")
+		if choice < 1 || choice > 5 {
+			fmt.Println("请选择 1-5")
 			continue
 		}
 		break
@@ -155,6 +165,8 @@ func promptEngine() (string, bool) {
 		return "deepseek", false
 	case 3:
 		return "kilo", false
+	case 4:
+		return "google", false
 	default:
 		return "", false
 	}
@@ -187,6 +199,15 @@ func promptKiloKey(config *Config) {
 	fmt.Scanln(&config.Kilo.Proxy)
 }
 
+// promptGoogleKey 提示输入 Google API Key
+func promptGoogleKey(config *Config) {
+	fmt.Print("请输入 Google API Key: ")
+	fmt.Scanln(&config.Google.APIKey)
+
+	fmt.Print("请输入代理地址 (直接回车不使用代理，如 http://127.0.0.1:7890): ")
+	fmt.Scanln(&config.Google.Proxy)
+}
+
 // 运行交互式配置向导，引导用户配置翻译引擎
 // 返回 引擎名称
 func InputEngine(config *Config) string {
@@ -202,6 +223,8 @@ func InputEngine(config *Config) string {
 		promptDeepSeekKey(config)
 	case "kilo":
 		promptKiloKey(config)
+	case "google":
+		promptGoogleKey(config)
 	}
 
 	// 保存配置

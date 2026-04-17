@@ -17,6 +17,10 @@ func DefaultConfig() *Config {
 			APIKey: "", // 必须由用户配置
 			Model:  "kilo-auto/free",
 		},
+		Google: GoogleConfig{
+			APIKey: "", // 必须由用户配置
+			Proxy:  "",
+		},
 		Servers: []Server{
 			{
 				Name: "T2TMUD",
