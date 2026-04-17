@@ -35,8 +35,8 @@ type commonState struct {
 	noBeep            bool
 	needRefresh       bool
 	keyBindings       map[string]func(*State) // 自定义按键绑定
-	currentLine     []rune              // 当前编辑的行内容
-	currentPos     int                 // 当前光标位置
+	currentLine       []rune                  // 当前编辑的行内容
+	currentPos        int                     // 当前光标位置
 }
 
 // TabStyle is used to select how tab completions are displayed.

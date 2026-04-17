@@ -37,7 +37,7 @@ func NewKilo(apiKey, model, proxy string) *Kilo {
 	hc := &http.Client{
 		Timeout: 60 * time.Second,
 		Transport: &http.Transport{
-			Proxy:           http.ProxyURL(proxyURL),
+			Proxy:               http.ProxyURL(proxyURL),
 			MaxIdleConnsPerHost: 100,
 			MaxIdleConns:        100,
 			IdleConnTimeout:     90 * time.Second,

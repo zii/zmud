@@ -13,9 +13,9 @@ import (
 
 // Google 翻译客户端，负责调用 Google Cloud Translation API 进行文本翻译
 type Google struct {
-	apiKey string     // Google API 密钥
-	from   string     // 源语言代码，如 auto(自动识别)、en(英语) 等
-	to     string     // 目标语言代码，如 zh(中文)
+	apiKey string // Google API 密钥
+	from   string // 源语言代码，如 auto(自动识别)、en(英语) 等
+	to     string // 目标语言代码，如 zh(中文)
 	hc     *http.Client
 }
 
@@ -30,7 +30,7 @@ func NewGoogle(apiKey, proxy string) *Google {
 	hc := &http.Client{
 		Timeout: 60 * time.Second,
 		Transport: &http.Transport{
-			Proxy:           http.ProxyURL(proxyURL),
+			Proxy:               http.ProxyURL(proxyURL),
 			MaxIdleConnsPerHost: 100,
 			IdleConnTimeout:     90 * time.Second,
 		},
