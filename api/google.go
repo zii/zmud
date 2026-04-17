@@ -37,7 +37,7 @@ func NewGoogle(apiKey, proxy string) *Google {
 	}
 	return &Google{
 		apiKey: apiKey,
-		from:   "auto",
+		from:   "", // 留空让 API 自动检测语言
 		to:     "zh",
 		hc:     hc,
 	}
@@ -71,10 +71,12 @@ func (g *Google) Translate(src string) (string, error) {
 		return "", fmt.Errorf("输入文本不能为空")
 	}
 
-	reqBody := GoogleRequest{
-		Q:      src,
-		Source: g.from,
-		Target: g.to,
+	reqBody := map[string]string{
+		"q":      src,
+		"target": g.to,
+	}
+	if g.from != "" {
+		reqBody["source"] = g.from
 	}
 	body, _ := json.Marshal(reqBody)
 
@@ -130,55 +132,51 @@ func (g *Google) TranslateBatch(srcs []string) ([]string, error) {
 		return nil, fmt.Errorf("超过最大翻译数量限制20条")
 	}
 
-	// Google API 支持批量翻译，但需要将文本放入 q 字段（换行分隔）
-	var sb strings.Builder
-	for i, src := range srcs {
-		if i > 0 {
-			sb.WriteString("\n")
+	// Google API 批量翻译会合并所有文本，需要逐个翻译
+	var results []string
+	for _, src := range srcs {
+		reqBody := map[string]string{
+			"q":      src,
+			"target": g.to,
 		}
-		sb.WriteString(src)
+		if g.from != "" {
+			reqBody["source"] = g.from
+		}
+		body, _ := json.Marshal(reqBody)
+
+		reqURL := fmt.Sprintf("https://translation.googleapis.com/language/translate/v2?key=%s", g.apiKey)
+		req, err := http.NewRequest("POST", reqURL, bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("创建请求失败：%w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := g.hc.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("请求失败：%w", err)
+		}
+		defer resp.Body.Close()
+
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("读取响应失败：%w", err)
+		}
+
+		var result GoogleResponse
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			return nil, fmt.Errorf("解析 JSON 失败：%w, body=%s", err, string(respBody))
+		}
+
+		if result.Error.Message != "" {
+			return nil, fmt.Errorf("API 错误 (%d): %s", result.Error.Code, result.Error.Message)
+		}
+
+		if len(result.Data.Translations) == 0 {
+			return nil, fmt.Errorf("无翻译结果: %s", string(respBody))
+		}
+
+		results = append(results, result.Data.Translations[0].TranslatedText)
 	}
 
-	reqBody := GoogleRequest{
-		Q:      sb.String(),
-		Source: g.from,
-		Target: g.to,
-	}
-	body, _ := json.Marshal(reqBody)
-
-	reqURL := fmt.Sprintf("https://translation.googleapis.com/language/translate/v2?key=%s", g.apiKey)
-	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("创建请求失败：%w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := g.hc.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("请求失败：%w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("读取响应失败：%w", err)
-	}
-
-	var result GoogleResponse
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("解析 JSON 失败：%w, body=%s", err, string(respBody))
-	}
-
-	// 检查 API 返回的错误
-	if result.Error.Message != "" {
-		return nil, fmt.Errorf("API 错误 (%d): %s", result.Error.Code, result.Error.Message)
-	}
-
-	if len(result.Data.Translations) == 0 {
-		return nil, fmt.Errorf("无翻译结果: %s", string(respBody))
-	}
-
-	// 解析换行分隔的翻译结果
-	translations := strings.Split(result.Data.Translations[0].TranslatedText, "\n")
-	return translations, nil
+	return results, nil
 }
