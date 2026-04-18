@@ -47,6 +47,7 @@ type Client struct {
 	cmdHistory  map[string]int  // 命令使用次数，用于补全排序
 	batchs      []*batch        // 服务器最近响应历史
 	wc          chan string     // 命令管道，后台发送goroutine从此读取
+	script      *lib.Script     // 当前运行的脚本
 }
 
 // 创建新的客户端实例，初始化所有通道和默认值
@@ -159,6 +160,15 @@ func (c *Client) doSystemCmd(input string) {
 			fmt.Printf("获取提示失败: %v\n", err)
 		} else {
 			fmt.Printf("建议: %s\n", ans)
+		}
+	} else if m, ok := strings.CutPrefix(input, "/run "); ok {
+		c.script = lib.NewScript(c.wc)
+		go c.script.Run(m)
+	} else if input == "/stop" {
+		if c.script != nil {
+			c.script.Stop()
+			c.script = nil
+			fmt.Println("脚本已停止")
 		}
 	} else if input == "/quit" {
 		fmt.Println("退出游戏")
@@ -290,7 +300,13 @@ func (c *Client) readInput() {
 				continue
 			}
 			// 发送到服务器
-			c.sendInput(input)
+			//c.sendInput(input)
+			if c.script != nil {
+				c.script.Stop()
+				fmt.Println("中断当前脚本.")
+			}
+			c.script = lib.NewScript(c.wc)
+			go c.script.Run(input)
 		}
 	}
 
@@ -504,6 +520,11 @@ func (c *Client) readServer() {
 		}
 		if total > height && len(c.batchs) > 1 {
 			c.batchs = c.batchs[1:]
+		}
+
+		// 投喂脚本
+		if c.script != nil {
+			c.script.Feed(text)
 		}
 	}
 }
