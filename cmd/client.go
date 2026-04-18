@@ -40,7 +40,7 @@ type Client struct {
 	server      *lib.Server     // 当前连接的服务器
 	ring        [10]string      // 服务器原始文本流(用于调试)
 	ri          int             // 最新一条原始文本
-	lang        lib.Lang        // 语言显示模式: LSRC=原文, lib.LTRN=译文, LMIX=双语
+	mode        lib.Mode        // 显示模式: LSRC=原文, lib.LTRN=译文, LMIX=双语
 	liner       *liner.State    // 行编辑器，支持历史和编辑
 	historyFile string          // 历史记录文件路径
 	cmdHistory  map[string]int  // 命令使用次数，用于补全排序
@@ -50,7 +50,7 @@ type Client struct {
 // 创建新的客户端实例，初始化所有通道和默认值
 // cfg: 翻译配置，不能为 nil
 // server: 当前连接的服务器
-func NewClient(cfg *lib.Config, server *lib.Server) *Client {
+func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) *Client {
 	home, _ := os.UserHomeDir()
 	f := filepath.Join(home, ".zmud", "history")
 	os.MkdirAll(filepath.Dir(f), 0700)
@@ -58,7 +58,7 @@ func NewClient(cfg *lib.Config, server *lib.Server) *Client {
 		exit:        make(chan struct{}),
 		tr:          lib.NewTranslator(cfg),
 		server:      server,
-		lang:        lib.LMIX, // 默认双语
+		mode:        mode,
 		liner:       liner.NewLiner(),
 		historyFile: f,
 		cmdHistory:  make(map[string]int),
@@ -161,10 +161,10 @@ func (c *Client) doSystemCmd(input string) {
 }
 
 // 设置语言模式
-func (c *Client) setLang(n lib.Lang) {
-	newl := lib.Lang(n)
-	if c.lang != newl {
-		c.lang = newl
+func (c *Client) setMode(n lib.Mode) {
+	newl := lib.Mode(n)
+	if c.mode != newl {
+		c.mode = newl
 		c.redraw()
 	}
 }
@@ -218,13 +218,13 @@ func (c *Client) readInput() {
 	c.liner.SetCtrlCAborts(true)
 	c.liner.SetCompleter(func(line string) []string { return c.completer(line) })
 	c.liner.SetKeyBinding("f1", func(s *liner.State) {
-		if c.lang == lib.LSRC {
-			c.setLang(lib.LTRN)
+		if c.mode == lib.LSRC {
+			c.setMode(lib.LTRN)
 		} else {
-			c.setLang(lib.LSRC)
+			c.setMode(lib.LSRC)
 		}
 	})
-	c.liner.SetKeyBinding("f2", func(s *liner.State) { c.setLang(lib.LMIX) })
+	c.liner.SetKeyBinding("f2", func(s *liner.State) { c.setMode(lib.LMIX) })
 
 	// 加载历史记录
 	if f, err := os.Open(c.historyFile); err == nil {
@@ -308,7 +308,7 @@ func (c *Client) dontTranslate(pure string) bool {
 
 // 当服务器返回超多条帮助信息时, 逐条翻译太慢, 需要先批量翻译进行预热
 func (c *Client) warmup(lines []string) {
-	if c.lang == lib.LSRC || len(lines) <= 5 || c.tr.GetEngine() == "" {
+	if c.mode == lib.LSRC || len(lines) <= 5 || c.tr.GetEngine() == "" {
 		return
 	}
 	var srcs []string
@@ -316,7 +316,7 @@ func (c *Client) warmup(lines []string) {
 		if line == "" {
 			continue
 		}
-		lang := c.lang
+		lang := c.mode
 		// 去掉前后的颜色码+空格, 翻译的时候再拼接上
 		_, _, _, pure := lib.StripANSI(line)
 		// 提示符不翻译
@@ -354,7 +354,7 @@ func (c *Client) Translate(text string) int {
 			fmt.Println()
 			continue
 		}
-		lang := c.lang
+		lang := c.mode
 		if c.tr.GetEngine() == "" {
 			lang = lib.LSRC
 		}
