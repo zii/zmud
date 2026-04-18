@@ -218,23 +218,27 @@ func (c *Client) completer(line string) []string {
 	return results
 }
 
-// 发送到服务器
+// 发送单命令到服务器
+func (c *Client) send(cmd string) {
+	if encoder := c.getEncoder(); encoder != nil {
+		out, _, err := transform.Bytes(encoder, []byte(cmd+"\r\n"))
+		if err == nil {
+			c.conn.Write(out)
+			return
+		}
+	}
+	fmt.Fprint(c.conn, cmd, "\r\n")
+}
+
 // 支持多命令发送(;)
-func (c *Client) sendCmd(input string) {
+func (c *Client) sendInput(input string) {
 	cmds := strings.Split(input, ";")
 	for i, cmd := range cmds {
 		if i > 0 {
 			time.Sleep(200 * time.Millisecond)
 		}
 		cmd = strings.TrimSpace(cmd)
-		if encoder := c.getEncoder(); encoder != nil {
-			out, _, err := transform.Bytes(encoder, []byte(cmd+"\r\n"))
-			if err == nil {
-				c.conn.Write(out)
-				continue
-			}
-		}
-		fmt.Fprint(c.conn, input, "\r\n")
+		c.send(cmd)
 	}
 }
 
@@ -276,17 +280,7 @@ func (c *Client) readInput() {
 				continue
 			}
 			// 发送到服务器
-			c.sendCmd(input)
-			// if encoder := c.getEncoder(); encoder != nil {
-			// 	out, _, err := transform.Bytes(encoder, []byte(input+"\r\n"))
-			// 	if err == nil {
-			// 		c.conn.Write(out)
-			// 	} else {
-			// 		fmt.Fprint(c.conn, input, "\r\n")
-			// 	}
-			// } else {
-			// 	fmt.Fprint(c.conn, input, "\r\n")
-			// }
+			c.sendInput(input)
 		}
 	}
 
