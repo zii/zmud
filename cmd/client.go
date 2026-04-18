@@ -46,6 +46,7 @@ type Client struct {
 	historyFile string          // 历史记录文件路径
 	cmdHistory  map[string]int  // 命令使用次数，用于补全排序
 	batchs      []*batch        // 服务器最近响应历史
+	wc          chan string     // 命令管道，后台发送goroutine从此读取
 }
 
 // 创建新的客户端实例，初始化所有通道和默认值
@@ -63,6 +64,7 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) *Client {
 		liner:       liner.NewLiner(),
 		historyFile: f,
 		cmdHistory:  make(map[string]int),
+		wc:          make(chan string, 10),
 	}
 }
 
@@ -218,8 +220,8 @@ func (c *Client) completer(line string) []string {
 	return results
 }
 
-// 发送单命令到服务器
-func (c *Client) send(cmd string) {
+// 发送单命令到服务器（实际写入）
+func (c *Client) sendImpl(cmd string) {
 	if encoder := c.getEncoder(); encoder != nil {
 		out, _, err := transform.Bytes(encoder, []byte(cmd+"\r\n"))
 		if err == nil {
@@ -228,6 +230,14 @@ func (c *Client) send(cmd string) {
 		}
 	}
 	fmt.Fprint(c.conn, cmd, "\r\n")
+}
+
+// 发送命令到管道，由后台goroutine实际发送
+func (c *Client) send(cmd string) {
+	select {
+	case c.wc <- cmd:
+	case <-c.exit:
+	}
 }
 
 // 支持多命令发送(;)
@@ -289,7 +299,15 @@ func (c *Client) readInput() {
 		c.liner.WriteHistory(f)
 		f.Close()
 	}
+	close(c.wc) // 关闭命令管道，通知 sendLoop 退出
 	c.quit()
+}
+
+// 从管道读取命令并发送到服务器
+func (c *Client) sendLoop() {
+	for cmd := range c.wc {
+		c.sendImpl(cmd)
+	}
 }
 
 // 运行客户端主循环，启动读写 goroutine 并使用 scanner 读取用户输入
@@ -297,6 +315,7 @@ func (c *Client) Run() {
 	defer c.liner.Close()
 
 	go c.readServer()
+	go c.sendLoop()
 	go c.readInput()
 
 	sig := make(chan os.Signal, 1)
