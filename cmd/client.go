@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unicode"
 
 	"zmud/ansi"
@@ -75,6 +76,10 @@ func (c *Client) Connect() error {
 	conn, err := net.Dial("tcp", c.server.Host+":"+c.server.Port)
 	if err != nil {
 		return err
+	}
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		// 强制立即发送，不等待缓冲区
+		tcpConn.SetNoDelay(true)
 	}
 	c.conn = conn
 	return nil
@@ -213,6 +218,26 @@ func (c *Client) completer(line string) []string {
 	return results
 }
 
+// 发送到服务器
+// 支持多命令发送(;)
+func (c *Client) sendCmd(input string) {
+	cmds := strings.Split(input, ";")
+	for i, cmd := range cmds {
+		if i > 0 {
+			time.Sleep(200 * time.Millisecond)
+		}
+		cmd = strings.TrimSpace(cmd)
+		if encoder := c.getEncoder(); encoder != nil {
+			out, _, err := transform.Bytes(encoder, []byte(cmd+"\r\n"))
+			if err == nil {
+				c.conn.Write(out)
+				continue
+			}
+		}
+		fmt.Fprint(c.conn, input, "\r\n")
+	}
+}
+
 // 从 stdin 读取输入行并发送到服务器
 func (c *Client) readInput() {
 	c.liner.SetCtrlCAborts(true)
@@ -251,16 +276,17 @@ func (c *Client) readInput() {
 				continue
 			}
 			// 发送到服务器
-			if encoder := c.getEncoder(); encoder != nil {
-				out, _, err := transform.Bytes(encoder, []byte(input+"\r\n"))
-				if err == nil {
-					c.conn.Write(out)
-				} else {
-					fmt.Fprint(c.conn, input, "\r\n")
-				}
-			} else {
-				fmt.Fprint(c.conn, input, "\r\n")
-			}
+			c.sendCmd(input)
+			// if encoder := c.getEncoder(); encoder != nil {
+			// 	out, _, err := transform.Bytes(encoder, []byte(input+"\r\n"))
+			// 	if err == nil {
+			// 		c.conn.Write(out)
+			// 	} else {
+			// 		fmt.Fprint(c.conn, input, "\r\n")
+			// 	}
+			// } else {
+			// 	fmt.Fprint(c.conn, input, "\r\n")
+			// }
 		}
 	}
 
@@ -420,7 +446,7 @@ func (c *Client) redraw() {
 // 从服务器读取消息，过滤 IAC 后输出，断开时触发退出
 func (c *Client) readServer() {
 	var tmp string
-	buf := make([]byte, 4096)
+	buf := make([]byte, 8192)
 	// 根据配置选择解码器
 	decoder := c.getDecoder()
 	for {
