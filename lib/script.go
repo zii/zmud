@@ -61,19 +61,31 @@ func (s *Script) Run(input string) {
 			i = -1 // 重置索引，下次循环从 0 开始
 			continue
 		}
-		// 检查是否是 #wait 指令
-		if strings.HasPrefix(cmd, "#wa ") {
-			duration := parseDuration(strings.TrimPrefix(cmd, "#wa "))
-			time.Sleep(duration)
+		// #jmp N：跳转到第 N 条命令
+		if strings.HasPrefix(cmd, "#jmp ") {
+			n, err := strconv.Atoi(strings.TrimPrefix(cmd, "#jmp "))
+			if err != nil || n < 1 {
+				fmt.Println("#jmp 无效")
+				return
+			}
+			i = n - 2 // -2 因为 for 循环有 i++
 			continue
 		}
-		// 检查是否有关键字等待
+		// #wa 指令：可中断的等待
+		if strings.HasPrefix(cmd, "#wa ") {
+			duration := parseDuration(strings.TrimPrefix(cmd, "#wa "))
+			if !s.wait(duration) {
+				return
+			}
+			continue
+		}
+		// 关键字等待
 		if i := strings.Index(cmd, ":"); i > 0 {
 			keyword := strings.TrimSpace(cmd[i+1:])
 			cmd = strings.TrimSpace(cmd[:i])
 			s.wc <- cmd
-			if !s.wait(keyword) {
-				return // 超时或中断
+			if !s.waitKeyword(keyword) {
+				return
 			}
 		} else {
 			s.wc <- cmd
@@ -109,8 +121,18 @@ func parseDuration(s string) time.Duration {
 	return time.Duration(v) * time.Millisecond
 }
 
+// 等待指定时间，可中断
+func (s *Script) wait(d time.Duration) bool {
+	select {
+	case <-s.stopCh:
+		return false
+	case <-time.After(d):
+		return true
+	}
+}
+
 // 等待服务器返回包含关键字的文本
-func (s *Script) wait(keyword string) bool {
+func (s *Script) waitKeyword(keyword string) bool {
 	deadline := time.Now().Add(s.timeout)
 	for time.Now().Before(deadline) {
 		select {
