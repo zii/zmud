@@ -18,6 +18,7 @@
 - F1/F2 实时重绘当前屏幕, 秒切原文/译文/混合模式
 - 支持gb/big5/utf-8编码, 支持中文mud
 - 线性指令步进脚本引擎
+- 触发器：服务器返回文本匹配时自动执行命令
 
 ## 步进脚本语法
 
@@ -77,3 +78,18 @@ look:正厅;e:东厢房;sleep:醒来;w
 - /alias key - 打印该别名
 - /alias key DELETE - 删除别名
 - /alias key value - 设置别名
+- /trigger - 打印列表，暂无触发器时提示
+- /trigger pattern - 打印该触发器
+- /trigger pattern DELETE - 删除触发器
+- /trigger pattern command - 设置触发器
+- /trigger "带空格的 pattern" command - 支持带空格的 pattern
+
+### 触发器举例
+
+```
+/trigger "Input 1 for GBK, 2 for UTF8, 3 for BIG5" 1
+/trigger 将*放入了 look;#wa 2s;get all
+```
+
+- 第一个：服务器显示编码选择时自动输入 1
+- 第二个：捡东西时自动先 look 再 get all

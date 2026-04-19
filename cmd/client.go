@@ -22,6 +22,7 @@ import (
 	"zmud/lib/liner"
 
 	"github.com/tidwall/buntdb"
+	"github.com/tidwall/match"
 	"golang.org/x/term"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/encoding/traditionalchinese"
@@ -51,6 +52,8 @@ type Client struct {
 	wc          chan string     // 命令管道，后台发送goroutine从此读取
 	script      *lib.Script     // 当前运行的脚本
 	db          *buntdb.DB      // 别名数据库
+	triggers    map[string]string // 触发器缓存
+	muTrigger  sync.Mutex
 }
 
 // 创建新的客户端实例，初始化所有通道和默认值
@@ -62,7 +65,7 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) *Client {
 	os.MkdirAll(filepath.Dir(f), 0700)
 	dbPath := filepath.Join(home, ".zmud", server.Host+":"+server.Port+".db")
 	db, _ := buntdb.Open(dbPath)
-	return &Client{
+	c := &Client{
 		exit:        make(chan struct{}),
 		tr:          lib.NewTranslator(cfg),
 		server:      server,
@@ -71,7 +74,10 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) *Client {
 		cmdHistory:  make(map[string]int),
 		wc:          make(chan string, 10),
 		db:          db,
+		triggers:    make(map[string]string),
 	}
+	c.loadTriggers()
+	return c
 }
 
 // 发送退出信号确保只关闭一次
@@ -216,6 +222,73 @@ func (c *Client) doSystemCmd(input string) {
 			})
 			fmt.Println("别名已设置:", key)
 		}
+	} else if input == "/trigger" {
+		var n int
+		c.db.View(func(tx *buntdb.Tx) error {
+			tx.AscendKeys("trigger:*", func(key, value string) bool {
+				pattern := key[8:]
+				fmt.Printf("  %s -> %s\n", pattern, value)
+				n++
+				return true
+			})
+			return nil
+		})
+		if n == 0 {
+			fmt.Println("暂无触发器")
+		}
+	} else if m, ok := strings.CutPrefix(input, "/trigger "); ok {
+		var pattern, command string
+		if strings.HasPrefix(m, `"`) {
+			// 带引号的 pattern
+			idx := strings.Index(m[1:], `"`)
+			if idx == -1 {
+				fmt.Println("触发器格式错误，需要引号闭合")
+				return
+			}
+			pattern = m[1 : idx+1]
+			if idx+2 < len(m) {
+				command = strings.TrimSpace(m[idx+2:])
+			}
+		} else {
+			// 不带引号，用第一个空格分隔
+			parts := strings.SplitN(m, " ", 2)
+			pattern = parts[0]
+			if len(parts) > 1 {
+				command = parts[1]
+			}
+		}
+		key := "trigger:" + pattern
+		if command == "" {
+			// 查询或删除
+			var val string
+			c.db.View(func(tx *buntdb.Tx) error {
+				val, _ = tx.Get(key)
+				return nil
+			})
+			if val != "" {
+				fmt.Printf("  %s -> %s\n", pattern, val)
+			} else {
+				fmt.Println("触发器不存在:", pattern)
+			}
+		} else if command == "DELETE" {
+			c.db.Update(func(tx *buntdb.Tx) error {
+				tx.Delete(key)
+				return nil
+			})
+			fmt.Println("触发器已删除:", pattern)
+			c.muTrigger.Lock()
+			delete(c.triggers, pattern)
+			c.muTrigger.Unlock()
+		} else {
+			c.db.Update(func(tx *buntdb.Tx) error {
+				tx.Set(key, command, nil)
+				return nil
+			})
+			c.muTrigger.Lock()
+			c.triggers[pattern] = command
+			c.muTrigger.Unlock()
+			fmt.Println("触发器已设置:", pattern)
+		}
 	} else if input == "/quit" {
 		fmt.Println("退出游戏")
 		c.quit()
@@ -236,7 +309,7 @@ func (c *Client) setMode(n lib.Mode) {
 func (c *Client) completer(line string) []string {
 	// 系统命令
 	commands := []string{
-		"/e", "/r", "/ask", "/hint", "/alias",
+		"/e", "/r", "/ask", "/hint", "/alias", "/trigger",
 	}
 	var results []string
 	seen := make(map[string]bool)
@@ -597,5 +670,52 @@ func (c *Client) readServer() {
 		if c.script != nil {
 			c.script.Feed(text)
 		}
+
+		// 检查触发器
+		c.checkTrigger(text)
 	}
+}
+
+// 加载触发器到缓存
+func (c *Client) loadTriggers() {
+	if c.db == nil {
+		return
+	}
+	c.triggers = make(map[string]string)
+	c.db.View(func(tx *buntdb.Tx) error {
+		tx.AscendKeys("trigger:*", func(key, command string) bool {
+			c.triggers[key[8:]] = command
+			return true
+		})
+		return nil
+	})
+}
+
+// 检查文本是否匹配触发器
+func (c *Client) checkTrigger(text string) {
+	if c.db == nil || len(c.triggers) == 0 {
+		return
+	}
+	lines := strings.Split(text, "\n")
+	c.muTrigger.Lock()
+	defer c.muTrigger.Unlock()
+	for _, line := range lines {
+		for pattern, command := range c.triggers {
+			if match.Match(line, "*"+pattern+"*") {
+				c.runTrigger(command)
+				break
+			}
+		}
+	}
+}
+
+// 执行触发器命令
+func (c *Client) runTrigger(command string) {
+	if c.script != nil && c.script.Running() {
+		fmt.Println("(触发器中断了当前脚本)")
+		c.script.Stop()
+	}
+	c.script = lib.NewScript(c.wc)
+	go c.script.Run(command)
+	fmt.Printf("⚡ 触发器触发: %s\n", command)
 }
