@@ -26,3 +26,7 @@
 - /ask <问题> - 询问 AI 任何问题
 - /hint - 根据最新上下文获取 AI 建议
 - /quit - 退出游戏
+- /alias - 打印列表，暂无别名时提示
+- /alias key - 打印该别名
+- /alias key DELETE - 删除别名
+- /alias key value - 设置别名

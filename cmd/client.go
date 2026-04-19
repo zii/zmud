@@ -21,6 +21,7 @@ import (
 	//"github.com/peterh/liner"
 	"zmud/lib/liner"
 
+	"github.com/tidwall/buntdb"
 	"golang.org/x/term"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/encoding/traditionalchinese"
@@ -49,6 +50,7 @@ type Client struct {
 	batchs      []*batch        // 服务器最近响应历史
 	wc          chan string     // 命令管道，后台发送goroutine从此读取
 	script      *lib.Script     // 当前运行的脚本
+	alias       *buntdb.DB      // 别名数据库
 }
 
 // 创建新的客户端实例，初始化所有通道和默认值
@@ -58,6 +60,8 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) *Client {
 	home, _ := os.UserHomeDir()
 	f := filepath.Join(home, ".zmud", "history")
 	os.MkdirAll(filepath.Dir(f), 0700)
+	dbPath := filepath.Join(home, ".zmud", server.Name+".db")
+	db, _ := buntdb.Open(dbPath)
 	return &Client{
 		exit:        make(chan struct{}),
 		tr:          lib.NewTranslator(cfg),
@@ -66,6 +70,7 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) *Client {
 		historyFile: f,
 		cmdHistory:  make(map[string]int),
 		wc:          make(chan string, 10),
+		alias:       db,
 	}
 }
 
@@ -169,6 +174,46 @@ func (c *Client) doSystemCmd(input string) {
 			c.script.Stop()
 			c.script = nil
 			fmt.Println("脚本已停止")
+		}
+	} else if input == "/alias" {
+		var n int
+		c.alias.View(func(tx *buntdb.Tx) error {
+			tx.Ascend("", func(key, value string) bool {
+				fmt.Printf("  %s -> %s\n", key, value)
+				n++
+				return true
+			})
+			return nil
+		})
+		if n == 0 {
+			fmt.Println("暂无别名")
+		}
+	} else if m, ok := strings.CutPrefix(input, "/alias "); ok {
+		parts := strings.SplitN(m, " ", 2)
+		key := parts[0]
+		if len(parts) == 1 {
+			var val string
+			c.alias.View(func(tx *buntdb.Tx) error {
+				val, _ = tx.Get(key)
+				return nil
+			})
+			if val != "" {
+				fmt.Printf("  %s -> %s\n", key, val)
+			} else {
+				fmt.Println("别名不存在:", key)
+			}
+		} else if parts[1] == "DELETE" {
+			c.alias.Update(func(tx *buntdb.Tx) error {
+				tx.Delete(key)
+				return nil
+			})
+			fmt.Println("别名已删除:", key)
+		} else {
+			c.alias.Update(func(tx *buntdb.Tx) error {
+				tx.Set(key, parts[1], nil)
+				return nil
+			})
+			fmt.Println("别名已设置:", key)
 		}
 	} else if input == "/quit" {
 		fmt.Println("退出游戏")
@@ -301,6 +346,18 @@ func (c *Client) readInput() {
 			if strings.HasPrefix(input, "/") {
 				c.doSystemCmd(input)
 				continue
+			}
+			// 检查别名
+			if c.alias != nil {
+				var val string
+				c.alias.View(func(tx *buntdb.Tx) error {
+					val, _ = tx.Get(input)
+					return nil
+				})
+				if val != "" {
+					fmt.Printf("❯ %s -> %s\n", input, val)
+					input = val
+				}
 			}
 			// 发送到服务器
 			//c.sendInput(input)
