@@ -364,7 +364,7 @@ func (c *Client) readInput() {
 			if c.script != nil {
 				c.script.Stop()
 				if c.script.Running() {
-					fmt.Println("中断了当前脚本.")
+					fmt.Println("(中断了当前脚本)")
 				}
 				c.script = nil
 			}

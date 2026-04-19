@@ -21,8 +21,8 @@ type Script struct {
 	wc      chan string   // 命令发送管道
 	waitCh  chan string   // 服务器文本管道
 	stopCh  chan struct{} // 中断信号
-	timeout time.Duration
-	running bool // 标记是否正在运行
+	timeout time.Duration // 命令执行超时时间
+	running bool          // 标记是否正在运行
 }
 
 // 创建新的脚本引擎
@@ -31,7 +31,7 @@ func NewScript(wc chan string) *Script {
 		wc:      wc,
 		waitCh:  make(chan string, 100),
 		stopCh:  make(chan struct{}),
-		timeout: time.Second,
+		timeout: 30 * time.Second,
 	}
 }
 
@@ -133,8 +133,8 @@ func (s *Script) wait(d time.Duration) bool {
 
 // 等待服务器返回包含关键字的文本
 func (s *Script) waitKeyword(keyword string) bool {
-	deadline := time.Now().Add(s.timeout)
-	for time.Now().Before(deadline) {
+	timeout := time.After(s.timeout)
+	for {
 		select {
 		case text := <-s.waitCh:
 			if strings.Contains(text, keyword) {
@@ -142,9 +142,11 @@ func (s *Script) waitKeyword(keyword string) bool {
 			}
 		case <-s.stopCh:
 			return false
+		case <-timeout:
+			fmt.Printf("等待关键字 [%s] 超时\n", keyword)
+			return false
 		}
 	}
-	return false
 }
 
 // 投喂服务器文本
