@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,25 @@ func NewScript(wc chan string) *Script {
 	}
 }
 
+var repeatRe = regexp.MustCompile(`^#([0-9]+)\s*(.*)`)
+
+// 匹配并提取重复指令: 例如输入 "#3 s", 返回(3, "s")
+func matchRepeat(text string) (int, string) {
+	// 预编译正则提高效率
+	subs := repeatRe.FindStringSubmatch(text)
+	if len(subs) < 3 {
+		return 1, text
+	}
+
+	// 将字符串类型的数字转换为 int
+	num, err := strconv.Atoi(subs[1])
+	if err != nil {
+		return 1, text
+	}
+
+	return num, subs[2]
+}
+
 // 运行脚本，解析并执行指令
 func (s *Script) Run(input string) {
 	s.running = true
@@ -62,11 +82,10 @@ func (s *Script) Run(input string) {
 			continue
 		}
 		// #jmp N：跳转到第 N 条命令
-		if strings.HasPrefix(cmd, "#jmp ") {
-			n, err := strconv.Atoi(strings.TrimPrefix(cmd, "#jmp "))
-			if err != nil || n < 1 {
-				fmt.Println("#jmp 无效")
-				return
+		if strings.HasPrefix(cmd, "#jmp") {
+			n, _ := strconv.Atoi(strings.TrimPrefix(cmd, "#jmp"))
+			if n <= 0 {
+				n = 1
 			}
 			i = n - 2 // -2 因为 for 循环有 i++
 			continue
@@ -79,16 +98,20 @@ func (s *Script) Run(input string) {
 			}
 			continue
 		}
-		// 关键字等待
-		if i := strings.Index(cmd, ":"); i > 0 {
-			keyword := strings.TrimSpace(cmd[i+1:])
-			cmd = strings.TrimSpace(cmd[:i])
-			s.wc <- cmd
-			if !s.waitKeyword(keyword) {
-				return
+		// #N 指令: 重复数次执行
+		repeat, cmd := matchRepeat(cmd)
+		for k := 0; k < repeat; k++ {
+			// 关键字等待
+			if i := strings.Index(cmd, ":"); i > 0 {
+				keyword := strings.TrimSpace(cmd[i+1:])
+				cmd = strings.TrimSpace(cmd[:i])
+				s.wc <- cmd
+				if !s.waitKeyword(keyword) {
+					return
+				}
+			} else {
+				s.wc <- cmd
 			}
-		} else {
-			s.wc <- cmd
 		}
 	}
 }
