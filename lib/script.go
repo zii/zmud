@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"strconv"
 	"strings"
 	"time"
 )
@@ -13,6 +14,8 @@ import (
 // 示例
 // look:正厅; e:东厢房; sleep:醒来; w; n
 // 逻辑： 发送 look -> 阻塞直到收到“正厅” -> 发送 e -> 阻塞直到收到“东厢房” -> 发送 sleep -> 阻塞直到收到“醒来” -> 顺序发送 w 和 n。
+// 支持内置延迟指令
+// look; #wa 1s; get all
 type Script struct {
 	wc      chan string   // 命令发送管道
 	waitCh  chan string   // 服务器文本管道
@@ -47,6 +50,12 @@ func (s *Script) Run(input string) {
 		if cmd == "" {
 			continue
 		}
+		// 检查是否是 #wait 指令
+		if strings.HasPrefix(cmd, "#wa ") {
+			duration := parseDuration(strings.TrimPrefix(cmd, "#wa "))
+			time.Sleep(duration)
+			continue
+		}
 		// 检查是否有关键字等待
 		if i := strings.Index(cmd, ":"); i > 0 {
 			keyword := strings.TrimSpace(cmd[i+1:])
@@ -59,6 +68,23 @@ func (s *Script) Run(input string) {
 			s.wc <- cmd
 		}
 	}
+}
+
+// 解析时间字符串，支持 500ms, 1s, 2.5s 等格式
+func parseDuration(s string) time.Duration {
+	s = strings.TrimSpace(s)
+	// 处理 "500ms", "1s", "2.5s" 格式
+	if strings.HasSuffix(s, "ms") {
+		v, _ := strconv.Atoi(strings.TrimSuffix(s, "ms"))
+		return time.Duration(v) * time.Millisecond
+	}
+	if strings.HasSuffix(s, "s") {
+		v, _ := strconv.ParseFloat(strings.TrimSuffix(s, "s"), 64)
+		return time.Duration(v*1e9) * time.Nanosecond
+	}
+	// 默认认为是毫秒
+	v, _ := strconv.Atoi(s)
+	return time.Duration(v) * time.Millisecond
 }
 
 // 等待服务器返回包含关键字的文本
