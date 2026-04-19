@@ -92,3 +92,7 @@ func (s *Script) Feed(text string) {
 func (s *Script) Stop() {
 	close(s.stopCh)
 }
+
+func (s *Script) Running() bool {
+	return s.running
+}

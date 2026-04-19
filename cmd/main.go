@@ -128,22 +128,25 @@ func main() {
 		fmt.Fprintf(os.Stderr, "配置未完成，翻译功能将被禁用。\n")
 	}
 
-	// 使用配置中的服务器列表
-	s := chooseServer(cfg)
+	for {
+		// 使用配置中的服务器列表
+		s := chooseServer(cfg)
 
-	// 判断语言模式：gb/gbk/big5 则用原文
-	mode := lib.LMIX
-	charset := strings.ToLower(s.Charset)
-	if charset == "gb" || charset == "gbk" || charset == "big5" {
-		mode = lib.LSRC
+		// 判断语言模式：gb/gbk/big5 则用原文
+		mode := lib.LMIX
+		charset := strings.ToLower(s.Charset)
+		if charset == "gb" || charset == "gbk" || charset == "big5" {
+			mode = lib.LSRC
+		}
+		c := NewClient(cfg, s, mode)
+
+		if err := c.Connect(); err != nil {
+			fmt.Fprintf(os.Stderr, "connect failed: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("Connected to %s:%s\n", s.Host, s.Port)
+		c.Run()
+		break
 	}
-	c := NewClient(cfg, s, mode)
-
-	if err := c.Connect(); err != nil {
-		fmt.Fprintf(os.Stderr, "connect failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Connected to %s:%s\n", s.Host, s.Port)
-	c.Run()
 }

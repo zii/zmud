@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -62,14 +63,13 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) *Client {
 		tr:          lib.NewTranslator(cfg),
 		server:      server,
 		mode:        mode,
-		liner:       liner.NewLiner(),
 		historyFile: f,
 		cmdHistory:  make(map[string]int),
 		wc:          make(chan string, 10),
 	}
 }
 
-// 发送退出信号，确保只关闭一次
+// 发送退出信号确保只关闭一次
 func (c *Client) quit() {
 	c.once.Do(func() { close(c.exit) })
 }
@@ -232,6 +232,9 @@ func (c *Client) completer(line string) []string {
 
 // 发送单命令到服务器（实际写入）
 func (c *Client) sendImpl(cmd string) {
+	if c.conn == nil {
+		return
+	}
 	if encoder := c.getEncoder(); encoder != nil {
 		out, _, err := transform.Bytes(encoder, []byte(cmd+"\r\n"))
 		if err == nil {
@@ -281,7 +284,7 @@ func (c *Client) readInput() {
 		f.Close()
 	}
 
-	for {
+	for c.liner != nil {
 		input, err := c.liner.Prompt("❯ ")
 		if err != nil { // EOF 或 Ctrl+C
 			break
@@ -303,7 +306,10 @@ func (c *Client) readInput() {
 			//c.sendInput(input)
 			if c.script != nil {
 				c.script.Stop()
-				fmt.Println("中断当前脚本.")
+				if c.script.Running() {
+					fmt.Println("中断了当前脚本.")
+				}
+				c.script = nil
 			}
 			c.script = lib.NewScript(c.wc)
 			go c.script.Run(input)
@@ -328,8 +334,15 @@ func (c *Client) sendLoop() {
 
 // 运行客户端主循环，启动读写 goroutine 并使用 scanner 读取用户输入
 func (c *Client) Run() {
-	defer c.liner.Close()
+	defer func() {
+		c.liner.Close()
+		if r := recover(); r != nil {
+			fmt.Printf("panic: %v\n", r)
+			debug.PrintStack()
+		}
+	}()
 
+	c.liner = liner.NewLiner()
 	go c.readServer()
 	go c.sendLoop()
 	go c.readInput()
