@@ -50,7 +50,7 @@ type Client struct {
 	batchs      []*batch        // 服务器最近响应历史
 	wc          chan string     // 命令管道，后台发送goroutine从此读取
 	script      *lib.Script     // 当前运行的脚本
-	alias       *buntdb.DB      // 别名数据库
+	db          *buntdb.DB      // 别名数据库
 }
 
 // 创建新的客户端实例，初始化所有通道和默认值
@@ -60,7 +60,7 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) *Client {
 	home, _ := os.UserHomeDir()
 	f := filepath.Join(home, ".zmud", "history")
 	os.MkdirAll(filepath.Dir(f), 0700)
-	dbPath := filepath.Join(home, ".zmud", server.Name+".db")
+	dbPath := filepath.Join(home, ".zmud", server.Host+":"+server.Port+".db")
 	db, _ := buntdb.Open(dbPath)
 	return &Client{
 		exit:        make(chan struct{}),
@@ -70,7 +70,7 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) *Client {
 		historyFile: f,
 		cmdHistory:  make(map[string]int),
 		wc:          make(chan string, 10),
-		alias:       db,
+		db:          db,
 	}
 }
 
@@ -177,9 +177,10 @@ func (c *Client) doSystemCmd(input string) {
 		}
 	} else if input == "/alias" {
 		var n int
-		c.alias.View(func(tx *buntdb.Tx) error {
-			tx.Ascend("", func(key, value string) bool {
-				fmt.Printf("  %s -> %s\n", key, value)
+		c.db.View(func(tx *buntdb.Tx) error {
+			tx.AscendKeys("alias:*", func(key, value string) bool {
+				name := key[6:]
+				fmt.Printf("  %s -> %s\n", name, value)
 				n++
 				return true
 			})
@@ -190,10 +191,10 @@ func (c *Client) doSystemCmd(input string) {
 		}
 	} else if m, ok := strings.CutPrefix(input, "/alias "); ok {
 		parts := strings.SplitN(m, " ", 2)
-		key := parts[0]
+		key := "alias:" + parts[0]
 		if len(parts) == 1 {
 			var val string
-			c.alias.View(func(tx *buntdb.Tx) error {
+			c.db.View(func(tx *buntdb.Tx) error {
 				val, _ = tx.Get(key)
 				return nil
 			})
@@ -203,13 +204,13 @@ func (c *Client) doSystemCmd(input string) {
 				fmt.Println("别名不存在:", key)
 			}
 		} else if parts[1] == "DELETE" {
-			c.alias.Update(func(tx *buntdb.Tx) error {
+			c.db.Update(func(tx *buntdb.Tx) error {
 				tx.Delete(key)
 				return nil
 			})
 			fmt.Println("别名已删除:", key)
 		} else {
-			c.alias.Update(func(tx *buntdb.Tx) error {
+			c.db.Update(func(tx *buntdb.Tx) error {
 				tx.Set(key, parts[1], nil)
 				return nil
 			})
@@ -235,7 +236,7 @@ func (c *Client) setMode(n lib.Mode) {
 func (c *Client) completer(line string) []string {
 	// 系统命令
 	commands := []string{
-		"/e", "/e baidu", "/e deepseek", "/e kilo", "/e update", "/r", "/ask", "/hint",
+		"/e", "/r", "/ask", "/hint", "/alias",
 	}
 	var results []string
 	seen := make(map[string]bool)
@@ -348,10 +349,10 @@ func (c *Client) readInput() {
 				continue
 			}
 			// 检查别名
-			if c.alias != nil {
+			if c.db != nil {
 				var val string
-				c.alias.View(func(tx *buntdb.Tx) error {
-					val, _ = tx.Get(input)
+				c.db.View(func(tx *buntdb.Tx) error {
+					val, _ = tx.Get("alias:" + input)
 					return nil
 				})
 				if val != "" {
