@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -42,12 +43,22 @@ func (s *Script) Run(input string) {
 		close(s.waitCh)
 	}()
 	cmds := strings.Split(input, ";")
-	for i, cmd := range cmds {
+	for i := 0; i < len(cmds); i++ {
 		if i > 0 {
 			time.Sleep(200 * time.Millisecond)
 		}
-		cmd = strings.TrimSpace(cmd)
+		cmd := strings.TrimSpace(cmds[i])
 		if cmd == "" {
+			continue
+		}
+
+		// #loop 指令：从头重新执行（安全检查：前面 #wa 总时间需 >= 1s）
+		if cmd == "#loop" {
+			if totalWaitDuration(cmds[:i]) < time.Second {
+				fmt.Println("#loop 被拒绝: 前面 #wa 总时间需 >= 1s")
+				return
+			}
+			i = -1 // 重置索引，下次循环从 0 开始
 			continue
 		}
 		// 检查是否是 #wait 指令
@@ -70,6 +81,17 @@ func (s *Script) Run(input string) {
 	}
 }
 
+// 计算前面所有 #wa 指令的总延迟时间
+func totalWaitDuration(cmds []string) time.Duration {
+	var total time.Duration
+	for _, c := range cmds {
+		if s, ok := strings.CutPrefix(c, "#wa "); ok {
+			total += parseDuration(s)
+		}
+	}
+	return total
+}
+
 // 解析时间字符串，支持 500ms, 1s, 2.5s 等格式
 func parseDuration(s string) time.Duration {
 	s = strings.TrimSpace(s)
@@ -80,7 +102,7 @@ func parseDuration(s string) time.Duration {
 	}
 	if strings.HasSuffix(s, "s") {
 		v, _ := strconv.ParseFloat(strings.TrimSuffix(s, "s"), 64)
-		return time.Duration(v*1e9) * time.Nanosecond
+		return time.Duration(v * float64(time.Second))
 	}
 	// 默认认为是毫秒
 	v, _ := strconv.Atoi(s)
