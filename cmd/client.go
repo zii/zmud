@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 	"unicode"
 
 	"zmud/ansi"
@@ -54,6 +53,7 @@ type Client struct {
 	db          *buntdb.DB        // 别名数据库
 	triggers    map[string]string // 触发器缓存（包括 SKIP）
 	muTrigger   sync.Mutex
+	encoder     transform.Transformer // 编码器，缓存以提升性能
 }
 
 // 创建新的客户端实例，初始化所有通道和默认值
@@ -77,6 +77,7 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) *Client {
 		triggers:    make(map[string]string),
 	}
 	c.loadTriggers()
+	c.encoder = c.initEncoder()
 	return c
 }
 
@@ -111,8 +112,8 @@ func (c *Client) getDecoder() transform.Transformer {
 	return nil
 }
 
-// 根据配置获取编码器，charset 为空则返回 nil（不转换）
-func (c *Client) getEncoder() transform.Transformer {
+// 根据配置初始化编码器，charset 为空则返回 nil（不转换）
+func (c *Client) initEncoder() transform.Transformer {
 	charset := strings.ToLower(c.server.Charset)
 	if charset == "gb" || charset == "gbk" {
 		return simplifiedchinese.GBK.NewEncoder()
@@ -358,8 +359,8 @@ func (c *Client) sendImpl(cmd string) {
 	if c.conn == nil {
 		return
 	}
-	if encoder := c.getEncoder(); encoder != nil {
-		out, _, err := transform.Bytes(encoder, []byte(cmd+"\r\n"))
+	if c.encoder != nil {
+		out, _, err := transform.Bytes(c.encoder, []byte(cmd+"\r\n"))
 		if err == nil {
 			c.conn.Write(out)
 			return
@@ -373,18 +374,6 @@ func (c *Client) send(cmd string) {
 	select {
 	case c.wc <- cmd:
 	case <-c.exit:
-	}
-}
-
-// 支持多命令发送(;)
-func (c *Client) sendInput(input string) {
-	cmds := strings.Split(input, ";")
-	for i, cmd := range cmds {
-		if i > 0 {
-			time.Sleep(200 * time.Millisecond)
-		}
-		cmd = strings.TrimSpace(cmd)
-		c.send(cmd)
 	}
 }
 
@@ -438,7 +427,6 @@ func (c *Client) readInput() {
 				}
 			}
 			// 发送到服务器
-			//c.sendInput(input)
 			if c.script != nil {
 				c.script.Stop()
 				if c.script.Running() {
@@ -448,6 +436,8 @@ func (c *Client) readInput() {
 			}
 			c.script = lib.NewScript(c.wc)
 			go c.script.Run(input)
+		} else {
+			c.send("")
 		}
 	}
 
