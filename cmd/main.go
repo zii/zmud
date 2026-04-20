@@ -145,6 +145,8 @@ func main() {
 			continue
 		}
 
+		// 设置终端窗口标题
+		fmt.Print("\x1b]1;" + s.Name + "\x07")
 		fmt.Printf("Connected to %s:%s\n", s.Host, s.Port)
 		c.Run()
 		break
