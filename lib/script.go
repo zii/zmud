@@ -70,6 +70,7 @@ func (s *Script) Run(input string) {
 		}
 		cmd := strings.TrimSpace(cmds[i])
 		if cmd == "" {
+			s.wc <- cmd
 			continue
 		}
 
