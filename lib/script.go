@@ -139,9 +139,9 @@ func parseDuration(s string) time.Duration {
 		v, _ := strconv.ParseFloat(strings.TrimSuffix(s, "s"), 64)
 		return time.Duration(v * float64(time.Second))
 	}
-	// 默认认为是毫秒
-	v, _ := strconv.Atoi(s)
-	return time.Duration(v) * time.Millisecond
+	// 默认认为是秒
+	v, _ := strconv.ParseFloat(s, 64)
+	return time.Duration(v * float64(time.Second))
 }
 
 // 等待指定时间，可中断

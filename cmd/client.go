@@ -37,23 +37,23 @@ type batch struct {
 
 // MUD 客户端，管理连接、输入输出和历史命令
 type Client struct {
-	conn        net.Conn        // TCP 连接，与 MUD 服务器的通信管道
-	exit        chan struct{}   // 退出信号通道，服务器断开时触发
-	once        sync.Once       // 确保退出通道只关闭一次
-	tr          *lib.Translator // 翻译器，将服务器消息翻译为中文
-	server      *lib.Server     // 当前连接的服务器
-	ring        [10]string      // 服务器原始文本流(用于调试)
-	ri          int             // 最新一条原始文本
-	mode        lib.Mode        // 显示模式: LSRC=原文, lib.LTRN=译文, LMIX=双语
-	liner       *liner.State    // 行编辑器，支持历史和编辑
-	historyFile string          // 历史记录文件路径
-	cmdHistory  map[string]int  // 命令使用次数，用于补全排序
-	batchs      []*batch        // 服务器最近响应历史
-	wc          chan string     // 命令管道，后台发送goroutine从此读取
-	script      *lib.Script     // 当前运行的脚本
-	db          *buntdb.DB      // 别名数据库
-	triggers    map[string]string // 触发器缓存
-	muTrigger  sync.Mutex
+	conn        net.Conn          // TCP 连接，与 MUD 服务器的通信管道
+	exit        chan struct{}     // 退出信号通道，服务器断开时触发
+	once        sync.Once         // 确保退出通道只关闭一次
+	tr          *lib.Translator   // 翻译器，将服务器消息翻译为中文
+	server      *lib.Server       // 当前连接的服务器
+	ring        [10]string        // 服务器原始文本流(用于调试)
+	ri          int               // 最新一条原始文本
+	mode        lib.Mode          // 显示模式: LSRC=原文, lib.LTRN=译文, LMIX=双语
+	liner       *liner.State      // 行编辑器，支持历史和编辑
+	historyFile string            // 历史记录文件路径
+	cmdHistory  map[string]int    // 命令使用次数，用于补全排序
+	batchs      []*batch          // 服务器最近响应历史
+	wc          chan string       // 命令管道，后台发送goroutine从此读取
+	script      *lib.Script       // 当前运行的脚本
+	db          *buntdb.DB        // 别名数据库
+	triggers    map[string]string // 触发器缓存（包括 SKIP）
+	muTrigger   sync.Mutex
 }
 
 // 创建新的客户端实例，初始化所有通道和默认值
@@ -247,7 +247,7 @@ func (c *Client) doSystemCmd(input string) {
 			}
 			pattern = m[1 : idx+1]
 			if idx+2 < len(m) {
-				command = strings.TrimSpace(m[idx+2:])
+				command = m[idx+2:]
 			}
 		} else {
 			// 不带引号，用第一个空格分隔
@@ -257,6 +257,7 @@ func (c *Client) doSystemCmd(input string) {
 				command = parts[1]
 			}
 		}
+		command = strings.TrimSpace(command)
 		key := "trigger:" + pattern
 		if command == "" {
 			// 查询或删除
@@ -649,6 +650,7 @@ func (c *Client) readServer() {
 		c.ri = (c.ri + 1) % len(c.ring)
 		c.ring[c.ri] = text
 		text = lib.CleanWrap(text)
+		text = c.checkSkip(text)
 		ln := c.Translate(text)
 
 		// 添加并截断batch历史
@@ -691,6 +693,33 @@ func (c *Client) loadTriggers() {
 	})
 }
 
+// 检查 SKIP 触发器，在 Translate 之前调用
+func (c *Client) checkSkip(text string) string {
+	if len(c.triggers) == 0 {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	var result []string
+	c.muTrigger.Lock()
+	defer c.muTrigger.Unlock()
+	for _, line := range lines {
+		skip := false
+		for pattern, command := range c.triggers {
+			if command == "SKIP" && match.Match(line, "*"+pattern+"*") {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			result = append(result, line)
+		}
+	}
+	if len(result) == len(lines) {
+		return text
+	}
+	return strings.Join(result, "\n")
+}
+
 // 检查文本是否匹配触发器
 func (c *Client) checkTrigger(text string) {
 	if c.db == nil || len(c.triggers) == 0 {
@@ -701,7 +730,7 @@ func (c *Client) checkTrigger(text string) {
 	defer c.muTrigger.Unlock()
 	for _, line := range lines {
 		for pattern, command := range c.triggers {
-			if match.Match(line, "*"+pattern+"*") {
+			if command != "SKIP" && match.Match(line, "*"+pattern+"*") {
 				c.runTrigger(command)
 				break
 			}
@@ -717,5 +746,5 @@ func (c *Client) runTrigger(command string) {
 	}
 	c.script = lib.NewScript(c.wc)
 	go c.script.Run(command)
-	fmt.Printf("⚡ 触发器触发: %s\n", command)
+	fmt.Printf("⚡ 触发器触发: %q\n", command)
 }
