@@ -41,7 +41,7 @@ type Client struct {
 	once        sync.Once         // 确保退出通道只关闭一次
 	tr          *lib.Translator   // 翻译器，将服务器消息翻译为中文
 	server      *lib.Server       // 当前连接的服务器
-	ring        [10]string        // 服务器原始文本流(用于调试)
+	ring        [10]string        // 服务器原始文本流(用于调试翻译)
 	ri          int               // 最新一条原始文本
 	mode        lib.Mode          // 显示模式: LSRC=原文, lib.LTRN=译文, LMIX=双语
 	liner       *liner.State      // 行编辑器，支持历史和编辑
@@ -633,7 +633,7 @@ func (c *Client) readServer() {
 		// 服务器会返回各式各样的换行, 比如"\r\n", "\n\r", "\r\r\n\n", "\r\n\r\n", 要把\r删了统一成\n
 		text = lib.RemoveCr(text)
 		// 处理拼接: 如果行尾以小写字母结尾, 就暂存
-		if !strings.HasSuffix(text, "[0m") && len(text) > 0 && unicode.IsLower(rune(text[len(text)-1])) {
+		if c.mode != lib.LSRC && !strings.HasSuffix(text, "[0m") && len(text) > 0 && unicode.IsLower(rune(text[len(text)-1])) {
 			tmp += text
 			continue
 		}
@@ -641,12 +641,20 @@ func (c *Client) readServer() {
 		tmp = ""
 		c.ri = (c.ri + 1) % len(c.ring)
 		c.ring[c.ri] = text
-		text = lib.CleanWrap(text)
+		// 中文游戏不处理折行
+		if c.mode != lib.LSRC {
+			text = lib.CleanWrap(text)
+		}
 		lines, pures := c.checkSkip(text)
-		ln := c.Translate(lines)
+		var rn int // 渲染出来的行数
+		if c.mode != lib.LSRC {
+			rn = c.Translate(lines)
+		} else {
+			fmt.Print(text) // 中文游戏直接打印
+		}
 
 		// 添加并截断batch历史
-		b := &batch{lines, ln}
+		b := &batch{lines, rn}
 		c.batchs = append(c.batchs, b)
 		total := 0
 		for _, b := range c.batchs {
