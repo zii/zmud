@@ -31,8 +31,8 @@ import (
 
 // 服务器一次性响应的文本
 type batch struct {
-	text string
-	ln   int // Translate后实际输出的行数
+	lines []string
+	ln    int // Translate后实际输出的行数
 }
 
 // MUD 客户端，管理连接、输入输出和历史命令
@@ -163,7 +163,9 @@ func (c *Client) doSystemCmd(input string) {
 		}
 		var context string
 		for i := start; i < n; i++ {
-			context += c.batchs[i].text
+			for _, line := range c.batchs[i].lines {
+				context += line + "\n"
+			}
 		}
 		prompt := fmt.Sprintf("我在玩[%s] Mud，当前屏幕显示内容如下：\n%s\n请问下一步应该输入什么命令？", c.server.Name, context)
 		ans, err := c.tr.Ask(prompt)
@@ -545,8 +547,7 @@ func (c *Client) warmup(lines []string) {
 }
 
 // 翻译一段文本, 返回输出的实际行数
-func (c *Client) Translate(text string) int {
-	lines := strings.Split(text, "\n")
+func (c *Client) Translate(lines []string) int {
 	go c.warmup(lines)
 	outn := len(lines)
 	preColor := ""
@@ -613,7 +614,7 @@ func (c *Client) redraw() {
 	fmt.Print("\x1b[2J\x1b[H")
 	// 重新输出
 	for _, b := range c.batchs {
-		ln := c.Translate(b.text)
+		ln := c.Translate(b.lines)
 		b.ln = ln
 	}
 }
@@ -651,11 +652,11 @@ func (c *Client) readServer() {
 		c.ri = (c.ri + 1) % len(c.ring)
 		c.ring[c.ri] = text
 		text = lib.CleanWrap(text)
-		text = c.checkSkip(text)
-		ln := c.Translate(text)
+		lines, pures := c.checkSkip(text)
+		ln := c.Translate(lines)
 
 		// 添加并截断batch历史
-		b := &batch{text, ln}
+		b := &batch{lines, ln}
 		c.batchs = append(c.batchs, b)
 		total := 0
 		for _, b := range c.batchs {
@@ -671,11 +672,11 @@ func (c *Client) readServer() {
 
 		// 投喂脚本
 		if c.script != nil {
-			c.script.Feed(text)
+			c.script.Feed(pures)
 		}
 
 		// 检查触发器
-		c.checkTrigger(text)
+		c.checkTrigger(pures)
 	}
 }
 
@@ -694,39 +695,35 @@ func (c *Client) loadTriggers() {
 	})
 }
 
-// 检查 SKIP 触发器，在 Translate 之前调用
-func (c *Client) checkSkip(text string) string {
-	if len(c.triggers) == 0 {
-		return text
-	}
-	lines := strings.Split(text, "\n")
+// 检查 SKIP 触发器，返回(原文的分行, 去除颜色的分行)
+func (c *Client) checkSkip(text string) ([]string, []string) {
 	var result []string
+	var pures []string
+	lines := strings.Split(text, "\n")
 	c.muTrigger.Lock()
 	defer c.muTrigger.Unlock()
 	for _, line := range lines {
+		pure := lib.CleanColor(line)
 		skip := false
 		for pattern, command := range c.triggers {
-			if command == "SKIP" && match.Match(line, "*"+pattern+"*") {
+			if command == "SKIP" && match.Match(pure, "*"+pattern+"*") {
 				skip = true
 				break
 			}
 		}
 		if !skip {
 			result = append(result, line)
+			pures = append(pures, pure)
 		}
 	}
-	if len(result) == len(lines) {
-		return text
-	}
-	return strings.Join(result, "\n")
+	return result, pures
 }
 
 // 检查文本是否匹配触发器
-func (c *Client) checkTrigger(text string) {
+func (c *Client) checkTrigger(lines []string) {
 	if c.db == nil || len(c.triggers) == 0 {
 		return
 	}
-	lines := strings.Split(text, "\n")
 	c.muTrigger.Lock()
 	defer c.muTrigger.Unlock()
 	for _, line := range lines {
