@@ -64,7 +64,7 @@ func (s *Script) Run(input string) {
 	}()
 	cmds := strings.Split(input, ";")
 	for i := 0; i < len(cmds); i++ {
-		fmt.Printf("[script:%d] %s\n", i, cmds[i])
+		//fmt.Printf("[script:%d] %s\n", i, cmds[i])
 		if i > 0 {
 			time.Sleep(200 * time.Millisecond)
 		}
@@ -155,14 +155,30 @@ func (s *Script) wait(d time.Duration) bool {
 	}
 }
 
-// 等待服务器返回包含关键字的文本
+// 等待服务器返回包含关键字的文本，支持正则表达式
 func (s *Script) waitKeyword(keyword string) bool {
 	timeout := time.After(s.timeout)
+
+	// 检测是否可能为正则表达式
+	isRegex := containsRegexMeta(keyword)
+	var re *regexp.Regexp
+	if isRegex {
+		re, _ = regexp.Compile(keyword)
+	}
+
 	for {
 		select {
 		case text := <-s.waitCh:
-			if strings.Contains(text, keyword) {
-				return true
+			if isRegex && re != nil {
+				//fmt.Printf("h1: %q, %q\n", keyword, text)
+				if re.MatchString(text) {
+					return true
+				}
+			} else {
+				//fmt.Printf("h2: %q, %q\n", keyword, text)
+				if strings.Contains(text, keyword) {
+					return true
+				}
 			}
 		case <-s.stopCh:
 			return false
@@ -173,14 +189,26 @@ func (s *Script) waitKeyword(keyword string) bool {
 	}
 }
 
-// 投喂服务器文本
-func (s *Script) Feed(text string) {
-	if !s.running {
-		return
+// 检测字符串是否包含正则表达式元字符
+func containsRegexMeta(s string) bool {
+	for _, c := range []byte("()|*+.") {
+		if strings.Contains(s, string(c)) {
+			return true
+		}
 	}
-	select {
-	case s.waitCh <- text:
-	default:
+	return false
+}
+
+// 投喂服务器文本
+func (s *Script) Feed(lines []string) {
+	for _, line := range lines {
+		if !s.running {
+			return
+		}
+		select {
+		case s.waitCh <- line:
+		default:
+		}
 	}
 }
 
