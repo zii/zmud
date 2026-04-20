@@ -32,7 +32,7 @@ func NewScript(wc chan string) *Script {
 		wc:      wc,
 		waitCh:  make(chan string, 100),
 		stopCh:  make(chan struct{}),
-		timeout: 30 * time.Second,
+		timeout: 300 * time.Second,
 	}
 }
 
@@ -64,6 +64,7 @@ func (s *Script) Run(input string) {
 	}()
 	cmds := strings.Split(input, ";")
 	for i := 0; i < len(cmds); i++ {
+		fmt.Printf("[script:%d] %s\n", i, cmds[i])
 		if i > 0 {
 			time.Sleep(200 * time.Millisecond)
 		}

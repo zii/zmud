@@ -197,7 +197,8 @@ func (c *Client) doSystemCmd(input string) {
 		}
 	} else if m, ok := strings.CutPrefix(input, "/alias "); ok {
 		parts := strings.SplitN(m, " ", 2)
-		key := "alias:" + parts[0]
+		name := parts[0]
+		key := "alias:" + name
 		if len(parts) == 1 {
 			var val string
 			c.db.View(func(tx *buntdb.Tx) error {
@@ -207,20 +208,20 @@ func (c *Client) doSystemCmd(input string) {
 			if val != "" {
 				fmt.Printf("  %s -> %s\n", key, val)
 			} else {
-				fmt.Println("别名不存在:", key)
+				fmt.Println("别名不存在:", name)
 			}
 		} else if parts[1] == "DELETE" {
 			c.db.Update(func(tx *buntdb.Tx) error {
 				tx.Delete(key)
 				return nil
 			})
-			fmt.Println("别名已删除:", key)
+			fmt.Println("别名已删除:", name)
 		} else {
 			c.db.Update(func(tx *buntdb.Tx) error {
 				tx.Set(key, parts[1], nil)
 				return nil
 			})
-			fmt.Println("别名已设置:", key)
+			fmt.Println("别名已设置:", name)
 		}
 	} else if input == "/trigger" {
 		var n int
