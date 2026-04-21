@@ -402,42 +402,45 @@ func (c *Client) readInput() {
 			break
 		}
 		// 跳过空行
-		if strings.TrimSpace(input) != "" {
-			// 添加到历史
+		input = strings.TrimSpace(input)
+		// 添加到历史
+		if input != "" {
 			c.liner.AppendHistory(input)
-			// 添加到历史（过滤短命令）
-			if len(input) > 2 {
-				c.cmdHistory[input]++
+		}
+		// 添加到历史（过滤短命令）
+		if len(input) > 2 {
+			c.cmdHistory[input]++
+		}
+		// 处理命令
+		if strings.HasPrefix(input, "/") {
+			c.doSystemCmd(input)
+			continue
+		}
+		// 检查别名
+		if c.db != nil && input != "" {
+			var val string
+			c.db.View(func(tx *buntdb.Tx) error {
+				val, _ = tx.Get("alias:" + input)
+				return nil
+			})
+			if val != "" {
+				fmt.Printf("❯ %s -> %s\n", input, val)
+				input = val
 			}
-			// 处理命令
-			if strings.HasPrefix(input, "/") {
-				c.doSystemCmd(input)
-				continue
+		}
+		// 发送到服务器
+		if c.script != nil {
+			c.script.Stop()
+			if c.script.Running() {
+				fmt.Println("(中断了当前脚本)")
 			}
-			// 检查别名
-			if c.db != nil {
-				var val string
-				c.db.View(func(tx *buntdb.Tx) error {
-					val, _ = tx.Get("alias:" + input)
-					return nil
-				})
-				if val != "" {
-					fmt.Printf("❯ %s -> %s\n", input, val)
-					input = val
-				}
-			}
-			// 发送到服务器
-			if c.script != nil {
-				c.script.Stop()
-				if c.script.Running() {
-					fmt.Println("(中断了当前脚本)")
-				}
-				c.script = nil
-			}
+			c.script = nil
+		}
+		if input == "" {
+			c.send("")
+		} else {
 			c.script = lib.NewScript(c.wc)
 			go c.script.Run(input)
-		} else {
-			c.send("")
 		}
 	}
 
