@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strconv"
@@ -8,6 +9,13 @@ import (
 
 	"zmud/lib"
 )
+
+// 读取整行输入，支持空格
+func readLine() string {
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	return strings.TrimSpace(line)
+}
 
 // chooseServer 解析命令行参数，无参数时显示菜单选择服务器
 // cfg: 完整的配置结构体，用于保存新添加的服务器
@@ -21,8 +29,12 @@ func chooseServer(cfg *lib.Config) *lib.Server {
 		if len(args) >= 2 {
 			port = args[1]
 		}
+		charset := ""
+		if len(args) >= 3 {
+			charset = args[2]
+		}
 		// 构造临时 Server 返回
-		return &lib.Server{Host: host, Port: port}
+		return &lib.Server{Host: host, Port: port, Charset: charset}
 	}
 
 	for {
@@ -61,20 +73,16 @@ func chooseServer(cfg *lib.Config) *lib.Server {
 // addNewServer 提示用户输入新的服务器信息，保存到配置文件
 func addNewServer(cfg *lib.Config) {
 	fmt.Print("请输入服务器名称: ")
-	var name string
-	fmt.Scanln(&name)
+	name := readLine()
 
 	fmt.Print("请输入服务器IP或域名: ")
-	var host string
-	fmt.Scanln(&host)
+	host := readLine()
 
 	fmt.Print("请输入服务器端口: ")
-	var port string
-	fmt.Scanln(&port)
+	port := readLine()
 
 	fmt.Print("请输入服务器编码 (gb/big5，回车跳过): ")
-	var charset string
-	fmt.Scanln(&charset)
+	charset := readLine()
 
 	server := lib.Server{Name: name, Host: host, Port: port, Charset: charset}
 	cfg.Servers = append(cfg.Servers, server)
