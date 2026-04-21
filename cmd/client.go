@@ -49,6 +49,7 @@ type Client struct {
 	cmdHistory  map[string]int    // 命令使用次数，用于补全排序
 	batchs      []*batch          // 服务器最近响应历史
 	wc          chan string       // 命令管道，后台发送goroutine从此读取
+	rc          chan string       // 读取的命令管道
 	script      *lib.Script       // 当前运行的脚本
 	db          *buntdb.DB        // 别名数据库
 	triggers    map[string]string // 触发器缓存（包括 SKIP）
@@ -73,6 +74,7 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) *Client {
 		historyFile: f,
 		cmdHistory:  make(map[string]int),
 		wc:          make(chan string, 10),
+		rc:          make(chan string, 10),
 		db:          db,
 		triggers:    make(map[string]string),
 	}
@@ -399,14 +401,37 @@ func (c *Client) readInput() {
 	for c.liner != nil {
 		input, err := c.liner.Prompt("❯ ")
 		if err != nil { // EOF 或 Ctrl+C
+			close(c.rc)
 			break
 		}
-		// 跳过空行
 		input = strings.TrimSpace(input)
 		// 添加到历史
+		// Prompt无限循环, 完全抢占了锁, 所以AppendHistory如果放在inputLoop会永远阻塞. 造成输入后屏幕不渲染.
 		if input != "" {
 			c.liner.AppendHistory(input)
 		}
+		c.rc <- input
+	}
+
+	// 保存历史记录
+	if f, err := os.Create(c.historyFile); err == nil {
+		c.liner.WriteHistory(f)
+		f.Close()
+	}
+	close(c.wc) // 关闭命令管道，通知 sendLoop 退出
+	c.quit()
+}
+
+// 从管道读取命令并发送到服务器
+func (c *Client) sendLoop() {
+	for cmd := range c.wc {
+		c.sendImpl(cmd)
+	}
+}
+
+// 处理输入循环，从 rc channel 读取并处理命令
+func (c *Client) inputLoop() {
+	for input := range c.rc {
 		// 添加到历史（过滤短命令）
 		if len(input) > 2 {
 			c.cmdHistory[input]++
@@ -443,21 +468,6 @@ func (c *Client) readInput() {
 			go c.script.Run(input)
 		}
 	}
-
-	// 保存历史记录
-	if f, err := os.Create(c.historyFile); err == nil {
-		c.liner.WriteHistory(f)
-		f.Close()
-	}
-	close(c.wc) // 关闭命令管道，通知 sendLoop 退出
-	c.quit()
-}
-
-// 从管道读取命令并发送到服务器
-func (c *Client) sendLoop() {
-	for cmd := range c.wc {
-		c.sendImpl(cmd)
-	}
 }
 
 // 运行客户端主循环，启动读写 goroutine 并使用 scanner 读取用户输入
@@ -474,6 +484,7 @@ func (c *Client) Run() {
 	go c.readServer()
 	go c.sendLoop()
 	go c.readInput()
+	go c.inputLoop()
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
