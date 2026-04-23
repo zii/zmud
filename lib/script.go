@@ -122,7 +122,7 @@ func (s *Script) Run(input string) {
 func totalWaitDuration(cmds []string) time.Duration {
 	var total time.Duration
 	for _, c := range cmds {
-		if s, ok := strings.CutPrefix(c, "#wa "); ok {
+		if s, ok := strings.CutPrefix(c, "#wa"); ok {
 			total += parseDuration(s)
 		}
 	}
