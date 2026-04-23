@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"regexp"
 	"strconv"
 	"strings"
@@ -97,6 +98,27 @@ func (s *Script) Run(input string) {
 			duration := parseDuration(cmd)
 			if !s.wait(duration) {
 				return
+			}
+			continue
+		}
+		// %N 指令: 概率执行（如 %20 drink）
+		if strings.HasPrefix(cmd, "%") {
+			probRe := regexp.MustCompile(`^%(\d+)(.+)$`)
+			match := probRe.FindStringSubmatch(cmd)
+			if match == nil {
+				// 格式无效，跳过
+				continue
+			}
+			prob, _ := strconv.Atoi(match[1])
+			if prob < 0 {
+				prob = 0
+			}
+			if prob > 100 {
+				prob = 100
+			}
+			// 命中概率则执行实际命令，否则跳过
+			if rand.N(100) < prob {
+				s.executeCmd(match[2])
 			}
 			continue
 		}
@@ -220,4 +242,21 @@ func (s *Script) Stop() {
 
 func (s *Script) Running() bool {
 	return s.running
+}
+
+// 执行单条命令，支持关键字等待格式 cmd:keyword
+func (s *Script) executeCmd(cmd string) {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return
+	}
+	// 关键字等待
+	if i := strings.Index(cmd, ":"); i > 0 {
+		keyword := strings.TrimSpace(cmd[i+1:])
+		cmd = strings.TrimSpace(cmd[:i])
+		s.wc <- cmd
+		s.waitKeyword(keyword)
+	} else {
+		s.wc <- cmd
+	}
 }
