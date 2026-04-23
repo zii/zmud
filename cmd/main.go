@@ -146,7 +146,11 @@ func main() {
 		if charset == "gb" || charset == "gbk" || charset == "big5" {
 			mode = lib.LSRC
 		}
-		c := NewClient(cfg, s, mode)
+		c, err := NewClient(cfg, s, mode)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			continue
+		}
 
 		if err := c.Connect(); err != nil {
 			fmt.Fprintf(os.Stderr, "connect failed: %v\n", err)

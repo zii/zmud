@@ -5,8 +5,7 @@ set -e
 case "$1" in
 1)
 	go build -o zmud zmud/cmd
-	cp zmud /usr/local/bin
-	rm zmud
+	mv zmud /usr/local/bin
 	zmud
 	;;
 2)

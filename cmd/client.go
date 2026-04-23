@@ -60,12 +60,15 @@ type Client struct {
 // 创建新的客户端实例，初始化所有通道和默认值
 // cfg: 翻译配置，不能为 nil
 // server: 当前连接的服务器
-func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) *Client {
+func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) (*Client, error) {
 	home, _ := os.UserHomeDir()
 	f := filepath.Join(home, ".zmud", "history")
 	os.MkdirAll(filepath.Dir(f), 0700)
 	dbPath := filepath.Join(home, ".zmud", server.Host+":"+server.Port+".db")
-	db, _ := buntdb.Open(dbPath)
+	db, err := buntdb.Open(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("打开数据库失败 %s: %v", dbPath, err)
+	}
 	c := &Client{
 		exit:        make(chan struct{}),
 		tr:          lib.NewTranslator(cfg),
@@ -80,7 +83,7 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) *Client {
 	}
 	c.loadTriggers()
 	c.encoder = c.initEncoder()
-	return c
+	return c, nil
 }
 
 // 发送退出信号确保只关闭一次
@@ -724,7 +727,7 @@ func (c *Client) checkSkip(text string) ([]string, []string) {
 		pure := lib.CleanColor(line)
 		skip := false
 		for pattern, command := range c.triggers {
-			if command == "SKIP" && match.Match(pure, "*"+pattern+"*") {
+			if command == "SKIP" && match.Match(pure, pattern) {
 				skip = true
 				break
 			}
