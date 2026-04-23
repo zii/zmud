@@ -664,7 +664,13 @@ func (c *Client) readServer() {
 		if c.mode != lib.LSRC {
 			rn = c.Translate(lines)
 		} else {
-			fmt.Print(text) // 中文游戏直接打印
+			// 中文游戏直接打印
+			for i, line := range lines {
+				if i > 0 {
+					fmt.Println()
+				}
+				fmt.Print(line)
+			}
 		}
 
 		// 添加并截断batch历史
