@@ -84,8 +84,8 @@ func (s *Script) Run(input string) {
 			continue
 		}
 		// #jmp N：跳转到第 N 条命令
-		if strings.HasPrefix(cmd, "#jmp") {
-			n, _ := strconv.Atoi(strings.TrimPrefix(cmd, "#jmp"))
+		if cmd, ok := strings.CutPrefix(cmd, "#jmp"); ok {
+			n, _ := strconv.Atoi(strings.TrimSpace(cmd))
 			if n <= 0 {
 				n = 1
 			}
@@ -93,8 +93,8 @@ func (s *Script) Run(input string) {
 			continue
 		}
 		// #wa 指令：可中断的等待
-		if strings.HasPrefix(cmd, "#wa ") {
-			duration := parseDuration(strings.TrimPrefix(cmd, "#wa "))
+		if cmd, ok := strings.CutPrefix(cmd, "#wa"); ok {
+			duration := parseDuration(cmd)
 			if !s.wait(duration) {
 				return
 			}
