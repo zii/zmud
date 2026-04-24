@@ -34,15 +34,21 @@ type Script struct {
 	stopCh  chan struct{}     // 中断信号
 	timeout time.Duration     // 命令执行超时时间
 	running bool              // 标记是否正在运行
+	aliases map[string]string // 别名快照（NewScript 时从 client 复制）
 }
 
-// 创建新的脚本引擎
-func NewScript(wc chan string) *Script {
+// 创建新的脚本引擎，aliases 为别名快照（内部会复制一份）
+func NewScript(wc chan string, aliases map[string]string) *Script {
+	a := make(map[string]string, len(aliases))
+	for k, v := range aliases {
+		a[k] = v
+	}
 	return &Script{
 		wc:      wc,
 		waitCh:  make(chan string, 100),
 		stopCh:  make(chan struct{}),
 		timeout: 300 * time.Second,
+		aliases: a,
 	}
 }
 
@@ -72,7 +78,11 @@ func (s *Script) Run(input string) {
 		s.running = false
 		close(s.waitCh)
 	}()
-	cmds := strings.Split(input, ";")
+	s.processCmds(strings.Split(input, ";"))
+}
+
+// 处理命令序列，支持 #loop/#jmp/#wa/%N/#N/cmd:keyword 及别名展开
+func (s *Script) processCmds(cmds []string) {
 	for i := 0; i < len(cmds); i++ {
 		//fmt.Printf("[script:%d] %s\n", i, cmds[i])
 		if i > 0 {
@@ -135,15 +145,19 @@ func (s *Script) Run(input string) {
 		repeat, cmd := matchRepeat(cmd)
 		for k := 0; k < repeat; k++ {
 			// 关键字等待
-			if i := strings.Index(cmd, ":"); i > 0 {
-				keyword := strings.TrimSpace(cmd[i+1:])
-				cmd = strings.TrimSpace(cmd[:i])
-				s.wc <- s.subst(cmd)
+			if idx := strings.Index(cmd, ":"); idx > 0 {
+				keyword := strings.TrimSpace(cmd[idx+1:])
+				cmd = strings.TrimSpace(cmd[:idx])
+				if expanded, ok := s.aliases[cmd]; ok {
+					s.processCmds(strings.Split(expanded, ";"))
+				} else {
+					s.wc <- s.subst(cmd)
+				}
 				if !s.waitKeyword(keyword) {
 					return
 				}
 			} else {
-				s.wc <- s.subst(cmd)
+				s.executeCmd(cmd)
 			}
 		}
 	}
@@ -472,19 +486,27 @@ func (s *Script) Running() bool {
 	return s.running
 }
 
-// 执行单条命令，支持关键字等待格式 cmd:keyword
+// 执行单条命令，支持关键字等待格式 cmd:keyword 和别名展开
 func (s *Script) executeCmd(cmd string) {
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" {
 		return
 	}
 	// 关键字等待
-	if i := strings.Index(cmd, ":"); i > 0 {
-		keyword := strings.TrimSpace(cmd[i+1:])
-		cmd = strings.TrimSpace(cmd[:i])
-		s.wc <- s.subst(cmd)
+	if idx := strings.Index(cmd, ":"); idx > 0 {
+		keyword := strings.TrimSpace(cmd[idx+1:])
+		cmd = strings.TrimSpace(cmd[:idx])
+		if expanded, ok := s.aliases[cmd]; ok {
+			s.processCmds(strings.Split(expanded, ";"))
+		} else {
+			s.wc <- s.subst(cmd)
+		}
 		s.waitKeyword(keyword)
 	} else {
+		if expanded, ok := s.aliases[cmd]; ok {
+			s.processCmds(strings.Split(expanded, ";"))
+			return
+		}
 		s.wc <- s.subst(cmd)
 	}
 }

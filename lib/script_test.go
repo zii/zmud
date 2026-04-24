@@ -154,7 +154,7 @@ func TestSubst_MissingVarNoArithmetic(t *testing.T) {
 // waitKeyword 集成测试
 func TestWaitKeyword_GlobCapture(t *testing.T) {
 	wc := make(chan string, 10)
-	s := NewScript(wc)
+	s := NewScript(wc, nil)
 
 	// 启动 waitKeyword 协程
 	done := make(chan bool)
@@ -179,7 +179,7 @@ func TestWaitKeyword_GlobCapture(t *testing.T) {
 
 func TestWaitKeyword_NamedCapture(t *testing.T) {
 	wc := make(chan string, 10)
-	s := NewScript(wc)
+	s := NewScript(wc, nil)
 
 	done := make(chan bool)
 	go func() {
@@ -198,7 +198,7 @@ func TestWaitKeyword_NamedCapture(t *testing.T) {
 
 func TestWaitKeyword_PlainText(t *testing.T) {
 	wc := make(chan string, 10)
-	s := NewScript(wc)
+	s := NewScript(wc, nil)
 
 	done := make(chan bool)
 	go func() {
@@ -214,7 +214,7 @@ func TestWaitKeyword_PlainText(t *testing.T) {
 
 func TestWaitKeyword_Regex(t *testing.T) {
 	wc := make(chan string, 10)
-	s := NewScript(wc)
+	s := NewScript(wc, nil)
 
 	done := make(chan bool)
 	go func() {
@@ -234,7 +234,7 @@ func TestWaitKeyword_Regex(t *testing.T) {
 // Script.Run 完整集成测试
 func TestRun_GlobCaptureAndSubst(t *testing.T) {
 	wc := make(chan string, 10)
-	s := NewScript(wc)
+	s := NewScript(wc, nil)
 
 	// 在另一个协程中运行
 	go s.Run("hp:气血*/*;say $1")
@@ -257,7 +257,7 @@ func TestRun_GlobCaptureAndSubst(t *testing.T) {
 
 func TestRun_NamedCaptureAndSubst(t *testing.T) {
 	wc := make(chan string, 10)
-	s := NewScript(wc)
+	s := NewScript(wc, nil)
 
 	go s.Run("hp:气血{hp}/*;dazuo $hp")
 
@@ -276,7 +276,7 @@ func TestRun_NamedCaptureAndSubst(t *testing.T) {
 
 func TestRun_ArithmeticSubst(t *testing.T) {
 	wc := make(chan string, 10)
-	s := NewScript(wc)
+	s := NewScript(wc, nil)
 
 	go s.Run("hp:气血{hp}/*;dazuo $hp-20")
 
@@ -295,7 +295,7 @@ func TestRun_ArithmeticSubst(t *testing.T) {
 
 func TestRun_PlainTextBackwardCompat(t *testing.T) {
 	wc := make(chan string, 10)
-	s := NewScript(wc)
+	s := NewScript(wc, nil)
 
 	go s.Run("sleep:醒来;drink")
 
@@ -348,7 +348,7 @@ func TestContainsRegexMeta(t *testing.T) {
 
 func TestRun_GlobCaptureMultipleSlash(t *testing.T) {
 	wc := make(chan string, 10)
-	s := NewScript(wc)
+	s := NewScript(wc, nil)
 
 	go s.Run("hp:气血】*/*;say $1")
 
@@ -426,4 +426,141 @@ func TestMakePattern_UnclosedBrace(t *testing.T) {
 		t.Fatal("a{b → 应字面匹配 a{b")
 	}
 
+}
+
+// aliases: 普通命令别名展开
+func TestRun_AliasBasic(t *testing.T) {
+	wc := make(chan string, 10)
+	aliases := map[string]string{"chihe": "hp:气血{hp}/*;drink"}
+	s := NewScript(wc, aliases)
+
+	go s.Run("chihe;say done")
+
+	// chihe → hp:气血{hp}/*
+	cmd1 := <-wc
+	if cmd1 != "hp" {
+		t.Fatalf("第1条命令应为 hp, 实际=[%s]", cmd1)
+	}
+	s.waitCh <- "气血 100/130"
+	if VARS["hp"] != "100" {
+		t.Fatalf("vars[hp] 应为 100, 实际=[%s]", VARS["hp"])
+	}
+
+	// chihe → drink
+	cmd2 := <-wc
+	if cmd2 != "drink" {
+		t.Fatalf("第2条命令应为 drink, 实际=[%s]", cmd2)
+	}
+
+	// say done
+	cmd3 := <-wc
+	if cmd3 != "say done" {
+		t.Fatalf("第3条命令应为 say done, 实际=[%s]", cmd3)
+	}
+}
+
+// aliases: cmd:keyword 别名展开
+func TestRun_AliasCmdKeyword(t *testing.T) {
+	wc := make(chan string, 10)
+	aliases := map[string]string{"chihe": "hp:气血{hp}/*;drink"}
+	s := NewScript(wc, aliases)
+
+	go s.Run("chihe:醒来;say done")
+
+	// chihe → hp:气血{hp}/*
+	cmd1 := <-wc
+	if cmd1 != "hp" {
+		t.Fatalf("第1条命令应为 hp, 实际=[%s]", cmd1)
+	}
+	s.waitCh <- "气血 100/130"
+
+	// chihe → drink
+	cmd2 := <-wc
+	if cmd2 != "drink" {
+		t.Fatalf("第2条命令应为 drink, 实际=[%s]", cmd2)
+	}
+
+	// 然后等待关键字 "醒来"
+	s.waitCh <- "你睡了一觉,终于醒来"
+
+	// say done
+	cmd3 := <-wc
+	if cmd3 != "say done" {
+		t.Fatalf("第3条命令应为 say done, 实际=[%s]", cmd3)
+	}
+}
+
+// aliases: 别名展开 + #jmp 索引不变
+func TestRun_AliasJmpPreserved(t *testing.T) {
+	wc := make(chan string, 10)
+	aliases := map[string]string{"chihe": "hp:气血{hp}/*;drink"}
+	s := NewScript(wc, aliases)
+
+	go s.Run("chihe;dazuo 100;#jmp2")
+
+	// i=0: chihe → hp:气血{hp}/*
+	cmd1 := <-wc
+	if cmd1 != "hp" {
+		t.Fatalf("第1条命令应为 hp, 实际=[%s]", cmd1)
+	}
+	s.waitCh <- "气血 100/130"
+
+	// chihe → drink
+	cmd2 := <-wc
+	if cmd2 != "drink" {
+		t.Fatalf("第2条命令应为 drink, 实际=[%s]", cmd2)
+	}
+
+	// i=1: dazuo 100
+	cmd3 := <-wc
+	if cmd3 != "dazuo 100" {
+		t.Fatalf("dazuo 应为 dazuo 100, 实际=[%s]", cmd3)
+	}
+
+	// #jmp2 应跳回 dazuo 100（原第2条，不是 drink）
+	cmd4 := <-wc
+	if cmd4 != "dazuo 100" {
+		t.Fatalf("#jmp2 应跳到 dazuo 100, 实际=[%s]", cmd4)
+	}
+}
+
+// aliases: %N 别名展开
+func TestRun_AliasPercentN(t *testing.T) {
+	wc := make(chan string, 10)
+	aliases := map[string]string{"chihe": "drink"}
+	s := NewScript(wc, aliases)
+
+	// %100 = 必然执行
+	go s.Run("%100 chihe;say done")
+
+	cmd1 := <-wc
+	if cmd1 != "drink" {
+		t.Fatalf("别名展开应为 drink, 实际=[%s]", cmd1)
+	}
+	cmd2 := <-wc
+	if cmd2 != "say done" {
+		t.Fatalf("应为 say done, 实际=[%s]", cmd2)
+	}
+}
+
+// aliases: #N 别名展开
+func TestRun_AliasRepeatN(t *testing.T) {
+	wc := make(chan string, 10)
+	aliases := map[string]string{"hello": "say hi"}
+	s := NewScript(wc, aliases)
+
+	go s.Run("#2 hello;say done")
+
+	cmd1 := <-wc
+	if cmd1 != "say hi" {
+		t.Fatalf("第1次应为 say hi, 实际=[%s]", cmd1)
+	}
+	cmd2 := <-wc
+	if cmd2 != "say hi" {
+		t.Fatalf("第2次应为 say hi, 实际=[%s]", cmd2)
+	}
+	cmd3 := <-wc
+	if cmd3 != "say done" {
+		t.Fatalf("应为 say done, 实际=[%s]", cmd3)
+	}
 }

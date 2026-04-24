@@ -54,6 +54,8 @@ type Client struct {
 	db          *lmdb.DB          // 别名数据库
 	triggers    map[string]string // 触发器缓存（包括 SKIP）
 	muTrigger   sync.Mutex
+	aliases     map[string]string // 别名缓存，写操作受 muAlias 保护
+	muAlias     sync.RWMutex
 	encoder     transform.Transformer // 编码器，缓存以提升性能
 }
 
@@ -82,6 +84,7 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) (*Client, err
 		triggers:    make(map[string]string),
 	}
 	c.loadTriggers()
+	c.loadAliases()
 	c.encoder = c.initEncoder()
 	return c, nil
 }
@@ -181,7 +184,7 @@ func (c *Client) doSystemCmd(input string) {
 			fmt.Printf("建议: %s\n", ans)
 		}
 	} else if m, ok := strings.CutPrefix(input, "/run "); ok {
-		c.script = lib.NewScript(c.wc)
+		c.script = lib.NewScript(c.wc, c.aliases)
 		go c.script.Run(m)
 	} else if input == "/stop" {
 		if c.script != nil {
@@ -223,12 +226,18 @@ func (c *Client) doSystemCmd(input string) {
 				tx.Delete(key)
 				return nil
 			})
+			c.muAlias.Lock()
+			delete(c.aliases, name)
+			c.muAlias.Unlock()
 			fmt.Println("别名已删除:", name)
 		} else {
 			c.db.Update(func(tx *lmdb.Tx) error {
 				tx.Set(key, parts[1], nil)
 				return nil
 			})
+			c.muAlias.Lock()
+			c.aliases[name] = parts[1]
+			c.muAlias.Unlock()
 			fmt.Println("别名已设置:", name)
 		}
 	} else if input == "/trigger" {
@@ -475,7 +484,7 @@ func (c *Client) inputLoop() {
 		if input == "" {
 			c.send("")
 		} else {
-			c.script = lib.NewScript(c.wc)
+			c.script = lib.NewScript(c.wc, c.aliases)
 			go c.script.Run(input)
 		}
 	}
@@ -725,6 +734,23 @@ func (c *Client) loadTriggers() {
 	})
 }
 
+// 从 DB 加载别名到内存缓存
+func (c *Client) loadAliases() {
+	if c.db == nil {
+		return
+	}
+	c.muAlias.Lock()
+	defer c.muAlias.Unlock()
+	c.aliases = make(map[string]string)
+	c.db.View(func(tx *lmdb.Tx) error {
+		tx.AscendKeys("alias:*", func(key, command string) bool {
+			c.aliases[key[6:]] = command
+			return true
+		})
+		return nil
+	})
+}
+
 // 检查 SKIP 触发器，返回(原文的分行, 去除颜色的分行)
 func (c *Client) checkSkip(text string) ([]string, []string) {
 	var result []string
@@ -772,7 +798,7 @@ func (c *Client) runTrigger(command string) {
 		fmt.Println("(触发器中断了当前脚本)")
 		c.script.Stop()
 	}
-	c.script = lib.NewScript(c.wc)
+	c.script = lib.NewScript(c.wc, c.aliases)
 	go c.script.Run(command)
 	fmt.Printf("⚡ 触发器触发: %q\n", command)
 }
