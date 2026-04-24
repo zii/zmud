@@ -699,9 +699,10 @@ func (c *Client) readServer() {
 			c.batchs = c.batchs[1:]
 		}
 
+		puretext := strings.Join(pures, "\n")
 		// 投喂脚本
 		if c.script != nil {
-			c.script.Feed(pures)
+			c.script.Feed(puretext)
 		}
 
 		// 检查触发器

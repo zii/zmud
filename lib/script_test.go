@@ -6,7 +6,7 @@ import (
 
 // makePattern glob -> regex 转换
 func TestMakePattern_GlobToRegex(t *testing.T) {
-	re, names := makePattern("气血*/*")
+	re := makePattern("气血*/*")
 	if re == nil {
 		t.Fatal("气血*/* 应生成合法 regex")
 	}
@@ -23,13 +23,11 @@ func TestMakePattern_GlobToRegex(t *testing.T) {
 	if subs[2] != " 230" {
 		t.Fatalf("第2捕获组应为  230, 实际=[%s]", subs[2])
 	}
-	if names != nil {
-		t.Fatal("不应有命名捕获")
-	}
+
 }
 
 func TestMakePattern_NamedCapture(t *testing.T) {
-	re, names := makePattern("气血{hp}/*")
+	re := makePattern("气血{hp}/*")
 	if re == nil {
 		t.Fatal("气血{hp}/* 应生成合法 regex")
 	}
@@ -40,23 +38,22 @@ func TestMakePattern_NamedCapture(t *testing.T) {
 	if len(subs) < 3 {
 		t.Fatal("应有 2 个捕获组")
 	}
-	if len(names) != 1 || names[0] != "hp" {
-		t.Fatalf("命名应为 [hp], 实际=%v", names)
+	names := re.SubexpNames()
+	if len(names) < 2 || names[1] != "hp" {
+		t.Fatalf("命名应为 [, hp], 实际=%v", names)
 	}
 }
 
 func TestMakePattern_PlainText(t *testing.T) {
-	re, names := makePattern("醒来")
+	re := makePattern("醒来")
 	if re != nil {
 		t.Fatal("纯文本应返回 nil regex")
 	}
-	if names != nil {
-		t.Fatal("纯文本应返回 nil names")
-	}
+
 }
 
 func TestMakePattern_PureRegex(t *testing.T) {
-	re, names := makePattern(`\s+(\d+)`)
+	re := makePattern(`\s+(\d+)`)
 	if re == nil {
 		t.Fatal("纯 regex \\s+(\\d+) 应生成合法 regex")
 	}
@@ -67,13 +64,11 @@ func TestMakePattern_PureRegex(t *testing.T) {
 	if len(subs) < 2 || subs[1] != "100" {
 		t.Fatalf("应捕获 100, 实际=%v", subs)
 	}
-	if names != nil {
-		t.Fatal("不应有命名捕获")
-	}
+
 }
 
 func TestMakePattern_MixedNamedAndGlob(t *testing.T) {
-	re, names := makePattern("{a}*{b}?")
+	re := makePattern("{a}*{b}?")
 	if re == nil {
 		t.Fatal("{a}*{b}? 应生成合法 regex")
 	}
@@ -84,17 +79,17 @@ func TestMakePattern_MixedNamedAndGlob(t *testing.T) {
 	if len(subs) != 5 {
 		t.Fatalf("应有 4 个捕获组(full match+4 groups), 实际=%d", len(subs))
 	}
-	if len(names) != 2 || names[0] != "a" || names[1] != "b" {
-		t.Fatalf("命名应为 [a b], 实际=%v", names)
+	names := re.SubexpNames()
+	if len(names) < 5 || names[1] != "a" || names[3] != "b" {
+		t.Fatalf("命名应为 [, a, b], 实际=%v", names)
 	}
 }
 
 // subst 变量替换
 func TestSubst_Basic(t *testing.T) {
-	s := &Script{vars: map[string]string{
-		"1":  "100",
-		"hp": "200",
-	}}
+	VARS["1"] = "100"
+	VARS["hp"] = "200"
+	s := &Script{}
 	tests := []struct {
 		input string
 		want  string
@@ -116,10 +111,9 @@ func TestSubst_Basic(t *testing.T) {
 }
 
 func TestSubst_Arithmetic(t *testing.T) {
-	s := &Script{vars: map[string]string{
-		"1":  "100",
-		"hp": "200",
-	}}
+	VARS["1"] = "100"
+	VARS["hp"] = "200"
+	s := &Script{}
 	tests := []struct {
 		input string
 		want  string
@@ -140,9 +134,8 @@ func TestSubst_Arithmetic(t *testing.T) {
 }
 
 func TestSubst_NonNumericNoArithmetic(t *testing.T) {
-	s := &Script{vars: map[string]string{
-		"hp": "abc",
-	}}
+	VARS["hp"] = "abc"
+	s := &Script{}
 	got := s.subst("$hp-20")
 	if got != "abc-20" {
 		t.Errorf("非数字变量不应触发算术, got=%q", got)
@@ -150,7 +143,8 @@ func TestSubst_NonNumericNoArithmetic(t *testing.T) {
 }
 
 func TestSubst_MissingVarNoArithmetic(t *testing.T) {
-	s := &Script{vars: map[string]string{}}
+	clear(VARS)
+	s := &Script{}
 	got := s.subst("dazuo $hp-20")
 	if got != "dazuo $hp-20" {
 		t.Errorf("缺失变量不应触发算术, got=%q", got)
@@ -175,11 +169,11 @@ func TestWaitKeyword_GlobCapture(t *testing.T) {
 	if !<-done {
 		t.Fatal("waitKeyword 应返回 true")
 	}
-	if s.vars["1"] != "】 230" {
-		t.Fatalf("vars[1] 应为 ] 230 , 实际=[%s]", s.vars["1"])
+	if VARS["1"] != "】 230" {
+		t.Fatalf("vars[1] 应为 ] 230 , 实际=[%s]", VARS["1"])
 	}
-	if s.vars["2"] != "230" {
-		t.Fatalf("vars[2] 应为 230, 实际=[%s]", s.vars["2"])
+	if VARS["2"] != "230" {
+		t.Fatalf("vars[2] 应为 230, 实际=[%s]", VARS["2"])
 	}
 }
 
@@ -197,8 +191,8 @@ func TestWaitKeyword_NamedCapture(t *testing.T) {
 	if !<-done {
 		t.Fatal("waitKeyword 应返回 true")
 	}
-	if s.vars["hp"] != "100" {
-		t.Fatalf("vars[hp] 应为 100, 实际=[%s]", s.vars["hp"])
+	if VARS["hp"] != "100" {
+		t.Fatalf("vars[hp] 应为 100, 实际=[%s]", VARS["hp"])
 	}
 }
 
@@ -232,8 +226,8 @@ func TestWaitKeyword_Regex(t *testing.T) {
 	if !<-done {
 		t.Fatal("waitKeyword regex 应返回 true")
 	}
-	if s.vars["1"] != "100" {
-		t.Fatalf("vars[1] 应为 100, 实际=[%s]", s.vars["1"])
+	if VARS["1"] != "100" {
+		t.Fatalf("vars[1] 应为 100, 实际=[%s]", VARS["1"])
 	}
 }
 
@@ -320,7 +314,7 @@ func TestRun_PlainTextBackwardCompat(t *testing.T) {
 
 // regexp.QuoteMeta 行为验证 — 确保 / 不被转义
 func TestMakePattern_SlashNotEscaped(t *testing.T) {
-	re, _ := makePattern("a*/b*")
+	re := makePattern("a*/b*")
 	if re == nil {
 		t.Fatal("a*/b* 应生成合法 regex")
 	}
@@ -371,16 +365,65 @@ func TestRun_GlobCaptureMultipleSlash(t *testing.T) {
 	}
 }
 
+
+func TestMakePattern_MixedGlobAndNamedCapture(t *testing.T) {
+	re := makePattern("【气血】{hp}/*[*【内力】{nl}/* (")
+	if re == nil {
+		t.Fatal("应生成合法 regex")
+	}
+	subs := re.FindStringSubmatch("│【气血】 230     / 230      [100%]    │【内力】 502     / 251     (+   0)  │")
+	if len(subs) < 6 {
+		t.Fatalf("应有 5 个捕获组, 实际=%d", len(subs)-1)
+	}
+	if subs[1] != " 230     " {
+		t.Fatalf("组1(hp) 应为 230 , 实际=[%s]", subs[1])
+	}
+	if subs[4] != " 502     " {
+		t.Fatalf("组4(nl) 应为 502 , 实际=[%s]", subs[4])
+	}
+	names := re.SubexpNames()
+	if names[1] != "hp" || names[4] != "nl" {
+		t.Fatalf("命名映射错误: hp→组%d, nl→组%d", func() int {
+			for i, n := range names {
+				if n == "hp" { return i }
+			}
+			return -1
+		}(), func() int {
+			for i, n := range names {
+				if n == "nl" { return i }
+			}
+			return -1
+		}())
+	}
+}
+
+
+func TestMakePattern_MultilineGlob(t *testing.T) {
+	re := makePattern("#*#*")
+	if re == nil {
+		t.Fatal("#*#* 应生成合法 regex")
+	}
+	text := "#26018,25372,252,362,121,141\n#230,230,230,130,130,130\n#0,80,320,376,0,0\n> "
+	if !re.MatchString(text) {
+		t.Fatal("(?s)#(.*?)#(.*) 应跨行匹配多行文本")
+	}
+	subs := re.FindStringSubmatch(text)
+	if len(subs) < 3 {
+		t.Fatal("应有 2 个捕获组")
+	}
+	if subs[1] != "26018,25372,252,362,121,141\n" {
+		t.Fatalf("组1应捕获两\x23间内容含换行, 实际=[%s]", subs[1])
+	}
+}
+
 // 错误处理: 不闭合的 { 应被安全处理
 func TestMakePattern_UnclosedBrace(t *testing.T) {
-	re, names := makePattern("a{b")
+	re := makePattern("a{b")
 	if re == nil {
 		t.Fatal("不闭合 { 也应生成 regex")
 	}
 	if !re.MatchString("a{b") {
 		t.Fatal("a{b → 应字面匹配 a{b")
 	}
-	if names != nil {
-		t.Fatal("不闭合 { 不应算命名捕获")
-	}
+
 }

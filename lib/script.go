@@ -25,13 +25,15 @@ import (
 // hp:气血*/*;dazuo $1          → * 捕获第1段，引用 $1
 // hp:气血{hp}/*;dazuo $hp      → {hp} 命名为 hp，引用 $hp
 // hp:气血{hp}/*;dazuo $hp-20   → 支持四则运算（$hp-20=80）
+// 全局变量，跨脚本共享捕获的变量
+var VARS = map[string]string{}
+
 type Script struct {
 	wc      chan string       // 命令发送管道
 	waitCh  chan string       // 服务器文本管道
 	stopCh  chan struct{}     // 中断信号
 	timeout time.Duration     // 命令执行超时时间
 	running bool              // 标记是否正在运行
-	vars    map[string]string // 最近一次 waitKeyword 的捕获变量
 }
 
 // 创建新的脚本引擎
@@ -41,7 +43,6 @@ func NewScript(wc chan string) *Script {
 		waitCh:  make(chan string, 100),
 		stopCh:  make(chan struct{}),
 		timeout: 300 * time.Second,
-		vars:    make(map[string]string),
 	}
 }
 
@@ -189,7 +190,7 @@ func (s *Script) wait(d time.Duration) bool {
 // 等待服务器返回包含关键字的文本，支持正则、通配符捕获和命名捕获
 func (s *Script) waitKeyword(keyword string) bool {
 	timeout := time.After(s.timeout)
-	re, names := makePattern(keyword)
+	re := makePattern(keyword)
 
 	for {
 		select {
@@ -201,12 +202,12 @@ func (s *Script) waitKeyword(keyword string) bool {
 				}
 				// 位置捕获：$1, $2 ...
 				for i := 1; i < len(subs); i++ {
-					s.vars[strconv.Itoa(i)] = strings.TrimSpace(subs[i])
+					VARS[strconv.Itoa(i)] = strings.TrimSpace(subs[i])
 				}
-				// 命名捕获：$name
-				for i, name := range names {
-					if i+1 < len(subs) {
-						s.vars[name] = strings.TrimSpace(subs[i+1])
+				// 命名捕获：$name（用 SubexpNames 获取正确组索引）
+				for i, name := range re.SubexpNames() {
+					if name != "" && i < len(subs) {
+						VARS[name] = strings.TrimSpace(subs[i])
 					}
 				}
 				return true
@@ -259,8 +260,8 @@ func hasNextLiteral(runes []rune, i int) bool {
 //	?      → 单字符捕获组 (.)
 //	其余 regex 元字符自动转义
 //
-// 返回编译好的 regex 和命名列表（names[i] 对应 group i+1）
-func makePattern(keyword string) (*regexp.Regexp, []string) {
+// 返回编译好的 regex（{name} 内嵌为 (?P<name>...) 以便 SubexpNames 正确映射）
+func makePattern(keyword string) *regexp.Regexp {
 	hasGlob := strings.ContainsAny(keyword, "*?")
 	hasNamed := strings.Contains(keyword, "{")
 
@@ -268,9 +269,9 @@ func makePattern(keyword string) (*regexp.Regexp, []string) {
 		// 纯文本关键字，也可能是有 regex 元字符但无通配符（如 \s+(\d+)）
 		if containsRegexMeta(keyword) {
 			re, _ := regexp.Compile(keyword)
-			return re, nil
+			return re
 		}
-		return nil, nil
+		return nil
 	}
 
 	if hasGlob || hasNamed {
@@ -281,8 +282,8 @@ func makePattern(keyword string) (*regexp.Regexp, []string) {
 
 	// 转换通配符和命名捕获为 regex
 	// 必须用 rune 迭代处理多字节 UTF-8 中文，byte 迭代会拆散字符
-	var names []string
 	var buf strings.Builder
+	buf.WriteString("(?s)") // DOTALL: . 匹配 \n，支持跨行匹配
 	runes := []rune(keyword)
 	for i := 0; i < len(runes); i++ {
 		r := runes[i]
@@ -301,11 +302,11 @@ func makePattern(keyword string) (*regexp.Regexp, []string) {
 				buf.WriteString(regexp.QuoteMeta(string(r)))
 				continue
 			}
-			names = append(names, string(runes[i+1:j]))
+			name := string(runes[i+1 : j])
 			if hasNextLiteral(runes, i) {
-				buf.WriteString("(.*?)")
+				buf.WriteString("(?P<" + name + ">.*?)")
 			} else {
-				buf.WriteString("(.*)")
+				buf.WriteString("(?P<" + name + ">.*)")
 			}
 			i = j // for 循环有 i++
 		case r == '*':
@@ -323,9 +324,9 @@ func makePattern(keyword string) (*regexp.Regexp, []string) {
 
 	re, err := regexp.Compile(buf.String())
 	if err != nil {
-		return nil, nil
+		return nil
 	}
-	return re, names
+	return re
 }
 
 // 替换命令中的 $ 变量引用，支持四则运算
@@ -357,7 +358,7 @@ func (s *Script) subst(cmd string) string {
 			for ; j < len(cmd) && isAlphaNum(cmd[j]); j++ {
 			}
 			name := cmd[i+1 : j]
-			val, ok := s.vars[name]
+			val, ok := VARS[name]
 			if ok {
 				varNum, j2 := tryArithmetic(cmd, j, val)
 				if j2 > j {
@@ -373,7 +374,7 @@ func (s *Script) subst(cmd string) string {
 		case next >= '0' && next <= '9':
 			// $N → 位置捕获
 			name := string(next)
-			val, ok := s.vars[name]
+			val, ok := VARS[name]
 			if ok {
 				varNum, j2 := tryArithmetic(cmd, i+2, val)
 				if j2 > i+2 {
@@ -452,15 +453,13 @@ func isDigit(b byte) bool {
 }
 
 // 投喂服务器文本
-func (s *Script) Feed(lines []string) {
-	for _, line := range lines {
-		if !s.running {
-			return
-		}
-		select {
-		case s.waitCh <- line:
-		default:
-		}
+func (s *Script) Feed(text string) {
+	if !s.running {
+		return
+	}
+	select {
+	case s.waitCh <- text:
+	default:
 	}
 }
 
