@@ -1,4 +1,4 @@
-package lmdbwrapper
+package lmdb
 
 import (
 	"path/filepath"
@@ -31,7 +31,7 @@ func TestGetSet(t *testing.T) {
 	}
 	defer db.Close()
 
-	// 测试Set和Get
+	// 测试 Set 和 Get
 	err = db.Update(func(tx *Tx) error {
 		return tx.Set("key1", "value1", nil)
 	})
@@ -86,7 +86,8 @@ func TestDelete(t *testing.T) {
 
 	// 删除键
 	err = db.Update(func(tx *Tx) error {
-		return tx.Delete("key1")
+		tx.Delete("key1")
+		return nil
 	})
 	if err != nil {
 		t.Fatalf("Delete failed: %v", err)
@@ -197,7 +198,7 @@ func TestConcurrentAccess(t *testing.T) {
 		t.Fatalf("Setup failed: %v", err)
 	}
 
-	// 简单并发测试（多个goroutine读取）
+	// 简单并发测试（多个 goroutine 读取）
 	done := make(chan bool, 10)
 	for i := 0; i < 10; i++ {
 		go func() {

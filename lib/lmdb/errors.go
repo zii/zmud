@@ -1,4 +1,4 @@
-package lmdbwrapper
+package lmdb
 
 import "errors"
 

@@ -16,7 +16,7 @@ import (
 	"zmud/ansi"
 	"zmud/api"
 	"zmud/lib"
-	"zmud/lib/lmdbwrapper"
+	"zmud/lib/lmdb"
 
 	//"github.com/peterh/liner"
 	"zmud/lib/liner"
@@ -51,7 +51,7 @@ type Client struct {
 	wc          chan string       // 命令管道，后台发送goroutine从此读取
 	rc          chan string       // 读取的命令管道
 	script      *lib.Script       // 当前运行的脚本
-	db          *lmdbwrapper.DB   // 别名数据库
+	db          *lmdb.DB   // 别名数据库
 	triggers    map[string]string // 触发器缓存（包括 SKIP）
 	muTrigger   sync.Mutex
 	encoder     transform.Transformer // 编码器，缓存以提升性能
@@ -65,7 +65,7 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) (*Client, err
 	f := filepath.Join(home, ".zmud", "history")
 	os.MkdirAll(filepath.Dir(f), 0700)
 	dbPath := filepath.Join(home, ".zmud", server.Host+":"+server.Port+".db")
-	db, err := lmdbwrapper.Open(dbPath)
+	db, err := lmdb.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败 %s: %v", dbPath, err)
 	}
@@ -191,7 +191,7 @@ func (c *Client) doSystemCmd(input string) {
 		}
 	} else if input == "/alias" {
 		var n int
-		c.db.View(func(tx *lmdbwrapper.Tx) error {
+		c.db.View(func(tx *lmdb.Tx) error {
 			tx.AscendKeys("alias:*", func(key, value string) bool {
 				name := key[6:]
 				fmt.Printf("  %s -> %s\n", name, value)
@@ -209,7 +209,7 @@ func (c *Client) doSystemCmd(input string) {
 		key := "alias:" + name
 		if len(parts) == 1 {
 			var val string
-			c.db.View(func(tx *lmdbwrapper.Tx) error {
+			c.db.View(func(tx *lmdb.Tx) error {
 				val, _ = tx.Get(key)
 				return nil
 			})
@@ -219,13 +219,13 @@ func (c *Client) doSystemCmd(input string) {
 				fmt.Println("别名不存在:", name)
 			}
 		} else if parts[1] == "DELETE" {
-			c.db.Update(func(tx *lmdbwrapper.Tx) error {
+			c.db.Update(func(tx *lmdb.Tx) error {
 				tx.Delete(key)
 				return nil
 			})
 			fmt.Println("别名已删除:", name)
 		} else {
-			c.db.Update(func(tx *lmdbwrapper.Tx) error {
+			c.db.Update(func(tx *lmdb.Tx) error {
 				tx.Set(key, parts[1], nil)
 				return nil
 			})
@@ -233,7 +233,7 @@ func (c *Client) doSystemCmd(input string) {
 		}
 	} else if input == "/trigger" {
 		var n int
-		c.db.View(func(tx *lmdbwrapper.Tx) error {
+		c.db.View(func(tx *lmdb.Tx) error {
 			tx.AscendKeys("trigger:*", func(key, value string) bool {
 				pattern := key[8:]
 				fmt.Printf("  %s -> %s\n", pattern, value)
@@ -271,7 +271,7 @@ func (c *Client) doSystemCmd(input string) {
 		if command == "" {
 			// 查询或删除
 			var val string
-			c.db.View(func(tx *lmdbwrapper.Tx) error {
+			c.db.View(func(tx *lmdb.Tx) error {
 				val, _ = tx.Get(key)
 				return nil
 			})
@@ -281,7 +281,7 @@ func (c *Client) doSystemCmd(input string) {
 				fmt.Println("触发器不存在:", pattern)
 			}
 		} else if command == "DELETE" {
-			c.db.Update(func(tx *lmdbwrapper.Tx) error {
+			c.db.Update(func(tx *lmdb.Tx) error {
 				tx.Delete(key)
 				return nil
 			})
@@ -290,7 +290,7 @@ func (c *Client) doSystemCmd(input string) {
 			delete(c.triggers, pattern)
 			c.muTrigger.Unlock()
 		} else {
-			c.db.Update(func(tx *lmdbwrapper.Tx) error {
+			c.db.Update(func(tx *lmdb.Tx) error {
 				tx.Set(key, command, nil)
 				return nil
 			})
@@ -447,7 +447,7 @@ func (c *Client) inputLoop() {
 		// 检查别名
 		if c.db != nil && input != "" {
 			var val string
-			c.db.View(func(tx *lmdbwrapper.Tx) error {
+			c.db.View(func(tx *lmdb.Tx) error {
 				val, _ = tx.Get("alias:" + input)
 				return nil
 			})
@@ -707,7 +707,7 @@ func (c *Client) loadTriggers() {
 		return
 	}
 	c.triggers = make(map[string]string)
-	c.db.View(func(tx *lmdbwrapper.Tx) error {
+	c.db.View(func(tx *lmdb.Tx) error {
 		tx.AscendKeys("trigger:*", func(key, command string) bool {
 			c.triggers[key[8:]] = command
 			return true

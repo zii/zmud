@@ -1,4 +1,4 @@
-package lmdbwrapper
+package lmdb
 
 import (
 	"os"
@@ -11,10 +11,10 @@ import (
 
 // DB 包装 lmdb.Env 和 lmdb.Dbi，提供与 buntdb 兼容的接口
 type DB struct {
-	env   *lmdb.Env
-	dbi   lmdb.DBI
-	path  string
-	mu    sync.RWMutex
+	env    *lmdb.Env
+	dbi    lmdb.DBI
+	path   string
+	mu     sync.RWMutex
 	closed bool
 }
 
@@ -27,8 +27,8 @@ type Tx struct {
 
 // Options 配置选项
 type Options struct {
-	MapSize  int64 // 内存映射大小（字节），默认10MB
-	MaxDBs   int   // 最大数据库数量，默认1
+	MapSize  int64 // 内存映射大小（字节），默认 10MB
+	MaxDBs   int   // 最大数据库数量，默认 1
 	NoSync   bool  // 是否禁用同步写入
 	ReadOnly bool  // 只读模式打开
 }
@@ -76,7 +76,7 @@ func OpenWithOptions(path string, opts *Options) (*DB, error) {
 		flags |= lmdb.Readonly
 	}
 
-	// 确保目录存在（lmdb期望目录路径）
+	// 确保目录存在（lmdb 期望目录路径）
 	if err := os.MkdirAll(path, 0755); err != nil {
 		env.Close()
 		return nil, err
@@ -171,7 +171,7 @@ func (tx *Tx) Get(key string) (string, error) {
 	return string(val), nil
 }
 
-// Set 设置键值对，opts参数被忽略（与buntdb兼容）
+// Set 设置键值对，opts 参数被忽略（与 buntdb 兼容）
 func (tx *Tx) Set(key, value string, opts any) error {
 	if !tx.write {
 		return ErrReadOnlyTx
@@ -188,7 +188,7 @@ func (tx *Tx) Delete(key string) error {
 }
 
 // AscendKeys 遍历键，对每个匹配 pattern 的键值对调用 fn
-// pattern 支持通配符 *（匹配任意字符序列），如 "alias:*"
+// pattern 支持通配符*（匹配任意字符序列），如 "alias:*"
 // 如果 fn 返回 false 则停止遍历
 func (tx *Tx) AscendKeys(pattern string, fn func(key, value string) bool) error {
 	// 从 pattern 提取实际前缀（取第一个 * 之前的部分），用于游标定位
@@ -220,7 +220,7 @@ func (tx *Tx) AscendKeys(pattern string, fn func(key, value string) bool) error 
 			break
 		}
 
-		// 用完整 pattern 做匹配（不含 * 时用前缀匹配）
+		// 用完整 pattern 做匹配（不含*时用前缀匹配）
 		matched := strings.HasPrefix(keyStr, pattern)
 		if strings.Contains(pattern, "*") {
 			matched = match.Match(keyStr, pattern)

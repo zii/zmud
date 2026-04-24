@@ -6,14 +6,14 @@ import (
 	"path/filepath"
 
 	"zmud/api"
-	"zmud/lib/lmdbwrapper"
+	"zmud/lib/lmdb"
 
 	"github.com/vkudryk/rapidhash-go"
 )
 
 // 翻译器，将文本翻译为中文，支持累积多行后统一翻译
 type Translator struct {
-	db       *lmdbwrapper.DB
+	db       *lmdb.DB
 	Config   *Config
 	baidu    *api.Baidu
 	deepseek *api.DeepSeek
@@ -31,7 +31,7 @@ func NewTranslator(cfg *Config) *Translator {
 	zmudDir := filepath.Join(home, ".zmud")
 	os.MkdirAll(zmudDir, 0755)
 	dbPath := filepath.Join(zmudDir, "cache.db")
-	db, err := lmdbwrapper.Open(dbPath)
+	db, err := lmdb.Open(dbPath)
 	if err != nil {
 		panic(err)
 	}
@@ -66,7 +66,7 @@ func (t *Translator) Translate(src string) (string, error) {
 
 	// 查缓存
 	var result string
-	t.db.View(func(tx *lmdbwrapper.Tx) error {
+	t.db.View(func(tx *lmdb.Tx) error {
 		result, _ = tx.Get(key)
 		return nil
 	})
@@ -97,7 +97,7 @@ func (t *Translator) Translate(src string) (string, error) {
 	}
 
 	// 存缓存
-	t.db.Update(func(tx *lmdbwrapper.Tx) error {
+	t.db.Update(func(tx *lmdb.Tx) error {
 		tx.Set(key, result, nil)
 		return nil
 	})
@@ -124,7 +124,7 @@ func (t *Translator) TranslateBatch(srcs []string) ([]string, error) {
 	for i, src := range srcs {
 		key := fmt.Sprintf("%x", rapidhash.String(src))
 		var cached string
-		t.db.View(func(tx *lmdbwrapper.Tx) error {
+		t.db.View(func(tx *lmdb.Tx) error {
 			cached, _ = tx.Get(key)
 			return nil
 		})
@@ -162,7 +162,7 @@ func (t *Translator) TranslateBatch(srcs []string) ([]string, error) {
 
 	// 存缓存
 	if err == nil {
-		t.db.Update(func(tx *lmdbwrapper.Tx) error {
+		t.db.Update(func(tx *lmdb.Tx) error {
 			for j, i := range missed {
 				if j < len(apiResults) {
 					key := fmt.Sprintf("%x", rapidhash.String(srcs[i]))
@@ -207,7 +207,7 @@ func (t *Translator) IsCached(src string) bool {
 	}
 	key := fmt.Sprintf("%x", rapidhash.String(src))
 	var result string
-	t.db.View(func(tx *lmdbwrapper.Tx) error {
+	t.db.View(func(tx *lmdb.Tx) error {
 		result, _ = tx.Get(key)
 		return nil
 	})
