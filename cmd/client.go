@@ -51,7 +51,7 @@ type Client struct {
 	wc          chan string       // 命令管道，后台发送goroutine从此读取
 	rc          chan string       // 读取的命令管道
 	script      *lib.Script       // 当前运行的脚本
-	db          *lmdb.DB   // 别名数据库
+	db          *lmdb.DB          // 别名数据库
 	triggers    map[string]string // 触发器缓存（包括 SKIP）
 	muTrigger   sync.Mutex
 	encoder     transform.Transformer // 编码器，缓存以提升性能
@@ -299,6 +299,14 @@ func (c *Client) doSystemCmd(input string) {
 			c.muTrigger.Unlock()
 			fmt.Println("触发器已设置:", pattern)
 		}
+	} else if m, ok := strings.CutPrefix(input, "/back "); ok {
+		rev, err := lib.ReversePath(m)
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(rev)
+			c.rc <- rev
+		}
 	} else if input == "/quit" {
 		fmt.Println("退出游戏")
 		c.quit()
@@ -319,7 +327,7 @@ func (c *Client) setMode(n lib.Mode) {
 func (c *Client) completer(line string) []string {
 	// 系统命令
 	commands := []string{
-		"/e", "/r", "/ask", "/hint", "/alias", "/trigger",
+		"/e", "/r", "/ask", "/hint", "/alias", "/trigger", "/back",
 	}
 	var results []string
 	seen := make(map[string]bool)

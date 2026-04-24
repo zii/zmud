@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"unicode"
@@ -152,6 +153,53 @@ func StripANSI(raw string) (preColor string, indent string, suffix string, conte
 	}
 
 	return preColor, indent, suffix, content
+}
+
+// 方向到反方向的映射
+var revDir = map[string]string{
+	"n": "s", "s": "n",
+	"e": "w", "w": "e",
+	"ne": "sw", "sw": "ne",
+	"nw": "se", "se": "nw",
+	"u": "d", "d": "u",
+	"eu": "wd", "wd": "eu",
+	"wu": "ed", "ed": "wu",
+	"nu": "sd", "sd": "nu",
+	"su": "nd", "nd": "su",
+	"enter": "out", "out": "enter",
+}
+
+// ReversePath 反转 MUD 路径字符串, 例如 "e;#2s;ne" 返回 "sw;#2n;w"
+// 支持 #2s 和 #2 s 两种带次数格式
+func ReversePath(path string) (string, error) {
+	segs := strings.Split(path, ";")
+	for i, seg := range segs {
+		var dir string
+		var cnt int
+		if strings.HasPrefix(seg, "#") {
+			n, err := fmt.Sscanf(seg, "#%d%s", &cnt, &dir)
+			if err != nil || n != 2 {
+				return "", fmt.Errorf("无法解析路径段: %s", seg)
+			}
+		} else {
+			dir = seg
+			cnt = 1
+		}
+		rev, ok := revDir[dir]
+		if !ok {
+			return "", fmt.Errorf("无法识别的方向: %s", dir)
+		}
+		if cnt > 1 {
+			segs[i] = fmt.Sprintf("#%d%s", cnt, rev)
+		} else {
+			segs[i] = rev
+		}
+	}
+	// 翻转段顺序
+	for i, j := 0, len(segs)-1; i < j; i, j = i+1, j-1 {
+		segs[i], segs[j] = segs[j], segs[i]
+	}
+	return strings.Join(segs, ";"), nil
 }
 
 // IsEnglishDominant 判断英文字符（A-Z, a-z）的个数是否超过总字符数的一半
