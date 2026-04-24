@@ -9,7 +9,11 @@ case "$1" in
 	zmud
 	;;
 2)
-	GOOS=linux GOARCH=amd64 go build -o zmud zmud/cmd
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+		CC="zig cc -target x86_64-linux-gnu" \
+		CXX="zig c++ -target x86_64-linux-gnu" \
+		CGO_CFLAGS="-Wno-unused-but-set-variable" \
+		go build -o zmud zmud/cmd
 	rsync -rutz ./zmud root@sg1:zmud/
 	;;
 *)
