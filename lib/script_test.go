@@ -398,6 +398,32 @@ func TestMakePattern_MixedGlobAndNamedCapture(t *testing.T) {
 }
 
 
+func TestMakePattern_NamedCaptureAtEnd(t *testing.T) {
+	re := makePattern("#*#*,*,{hp},*,*,{js}")
+	if re == nil {
+		t.Fatal("应生成合法 regex")
+	}
+	text := "#5988,16739,359,718,458,916\n#303,303,303,243,243,243\n> "
+	if !re.MatchString(text) {
+		t.Fatal("应匹配多行 hpbrief 输出")
+	}
+	subs := re.FindStringSubmatch(text)
+	if len(subs) < 8 {
+		t.Fatalf("应有 7 个捕获组, 实际=%d", len(subs)-1)
+	}
+	if subs[4] != "303" {
+		t.Fatalf("hp 应为 303, 实际=[%s]", subs[4])
+	}
+	if subs[7] != "243\n> " {
+		t.Fatalf("js 应为 243\\n> , 实际=[%s]", subs[7])
+	}
+	names := re.SubexpNames()
+	if names[4] != "hp" || names[7] != "js" {
+		t.Fatalf("命名映射错误: hp→组4, js→组7, 实际=hp→组%d, js→组%d",
+			func() int { for i, n := range names { if n == "hp" { return i } }; return -1 }(),
+			func() int { for i, n := range names { if n == "js" { return i } }; return -1 }())
+	}
+}
 func TestMakePattern_MultilineGlob(t *testing.T) {
 	re := makePattern("#*#*")
 	if re == nil {
@@ -562,5 +588,144 @@ func TestRun_AliasRepeatN(t *testing.T) {
 	cmd3 := <-wc
 	if cmd3 != "say done" {
 		t.Fatalf("应为 say done, 实际=[%s]", cmd3)
+	}
+}
+
+// evalCompare 比较运算符
+func TestEvalCompare(t *testing.T) {
+	tests := []struct {
+		expr string
+		want bool
+	}{
+		{"5>3", true},
+		{"3>5", false},
+		{"3<5", true},
+		{"5<3", false},
+		{"5>=5", true},
+		{"5>=6", false},
+		{"5<=5", true},
+		{"6<=5", false},
+		{"5=5", true},
+		{"5=6", false},
+		{"5!=6", true},
+		{"5!=5", false},
+		{"100>100", false},
+		{"abc>5", false},   // 非法左值 → 0>5
+		{"5>xyz", true},    // 非法右值 → 5>0
+		{"abc>xyz", false}, // 全非法 → 0>0
+	}
+	for _, tt := range tests {
+		got := evalCompare(tt.expr)
+		if got != tt.want {
+			t.Errorf("evalCompare(%q) = %v, want %v", tt.expr, got, tt.want)
+		}
+	}
+}
+
+// #if 条件真 → 跳转
+func TestRun_IfJump(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["nl"] = "150"
+	defer delete(VARS, "nl")
+	s := NewScript(wc, nil)
+
+	go s.Run("dazuo;#if $nl>100 1;sleep")
+
+	cmd1 := <-wc
+	if cmd1 != "dazuo" {
+		t.Fatalf("第1条应为 dazuo, 实际=[%s]", cmd1)
+	}
+	// #if $nl>100 1 → 150>100 → true → 跳回命令 1
+	cmd2 := <-wc
+	if cmd2 != "dazuo" {
+		t.Fatalf("跳转后应为 dazuo, 实际=[%s]", cmd2)
+	}
+}
+
+// #if 条件假 → fallthrough
+func TestRun_IfFallthrough(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["nl"] = "50"
+	defer delete(VARS, "nl")
+	s := NewScript(wc, nil)
+
+	go s.Run("dazuo;#if $nl>100 1;sleep")
+
+	cmd1 := <-wc
+	if cmd1 != "dazuo" {
+		t.Fatalf("第1条应为 dazuo, 实际=[%s]", cmd1)
+	}
+	// #if $nl>100 1 → 50>100 → false → fallthrough
+	cmd2 := <-wc
+	if cmd2 != "sleep" {
+		t.Fatalf("fallthrough 后应为 sleep, 实际=[%s]", cmd2)
+	}
+}
+
+// #if 条件真 → 执行命令（单命令）
+func TestRun_IfExecCmd(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["nl"] = "150"
+	defer delete(VARS, "nl")
+	s := NewScript(wc, nil)
+
+	go s.Run("dazuo;#if $nl>100 drink;sleep")
+
+	cmd1 := <-wc
+	if cmd1 != "dazuo" {
+		t.Fatalf("第1条应为 dazuo, 实际=[%s]", cmd1)
+	}
+	// #if $nl>100 drink → 150>100 → true → executeCmd("drink")
+	cmd2 := <-wc
+	if cmd2 != "drink" {
+		t.Fatalf("条件真应执行 drink, 实际=[%s]", cmd2)
+	}
+	// sleep 是 #if 后的下一条（#if 不跳转，继续往下）
+	cmd3 := <-wc
+	if cmd3 != "sleep" {
+		t.Fatalf("ifeq 后应为 sleep, 实际=[%s]", cmd3)
+	}
+}
+
+// #if 条件真 → 执行多词命令
+func TestRun_IfExecMultiWord(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["js"] = "200"
+	defer delete(VARS, "js")
+	s := NewScript(wc, nil)
+
+	go s.Run("#if $js>100 tuna 100;sleep")
+
+	// #if $js>100 tuna 100 → 200>100 → true → executeCmd("tuna 100")
+	cmd1 := <-wc
+	if cmd1 != "tuna 100" {
+		t.Fatalf("多词命令应为 tuna 100, 实际=[%s]", cmd1)
+	}
+	cmd2 := <-wc
+	if cmd2 != "sleep" {
+		t.Fatalf("#if 后应为 sleep, 实际=[%s]", cmd2)
+	}
+}
+
+// #if 执行带关键字的命令
+func TestRun_IfExecCmdWithKeyword(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["nl"] = "150"
+	defer delete(VARS, "nl")
+	s := NewScript(wc, nil)
+
+	go s.Run("#if $nl>100 drink:喝了;sleep")
+
+	// #if → executeCmd("drink:喝了")
+	cmd1 := <-wc
+	if cmd1 != "drink" {
+		t.Fatalf("命令应为 drink, 实际=[%s]", cmd1)
+	}
+	// 等待关键字
+	s.waitCh <- "咕噜咕噜喝了一大口"
+	// 然后 sleep
+	cmd2 := <-wc
+	if cmd2 != "sleep" {
+		t.Fatalf("#if 后应为 sleep, 实际=[%s]", cmd2)
 	}
 }

@@ -112,6 +112,29 @@ func (s *Script) processCmds(cmds []string) {
 			i = n - 2 // -2 因为 for 循环有 i++
 			continue
 		}
+		// #if <expr> <action>: 条件跳转或执行命令
+		if cmd, ok := strings.CutPrefix(cmd, "#if"); ok {
+			rest := strings.TrimSpace(cmd)
+			expanded := s.subst(rest) // 展开 $var → 如 "250>100 drink"
+			firstSpace := strings.IndexByte(expanded, ' ')
+			if firstSpace > 0 {
+				expr := strings.TrimSpace(expanded[:firstSpace])
+				action := strings.TrimSpace(expanded[firstSpace+1:])
+				if evalCompare(expr) {
+					if n, err := strconv.Atoi(action); err == nil {
+						// 数字 → 跳转
+						if n <= 0 {
+							n = 1
+						}
+						i = n - 2 // -2 因为 for 循环有 i++
+					} else {
+						// 命令 → 执行
+						s.executeCmd(action)
+					}
+				}
+			}
+			continue
+		}
 		// #wa 指令：可中断的等待
 		if cmd, ok := strings.CutPrefix(cmd, "#wa"); ok {
 			duration := parseDuration(cmd)
@@ -317,7 +340,7 @@ func makePattern(keyword string) *regexp.Regexp {
 				continue
 			}
 			name := string(runes[i+1 : j])
-			if hasNextLiteral(runes, i) {
+			if hasNextLiteral(runes, j) {
 				buf.WriteString("(?P<" + name + ">.*?)")
 			} else {
 				buf.WriteString("(?P<" + name + ">.*)")
@@ -464,6 +487,41 @@ func isAlphaNum(b byte) bool {
 // 判断字节是否为数字
 func isDigit(b byte) bool {
 	return b >= '0' && b <= '9'
+}
+
+// 解析并计算比较表达式，如 "250>100" 返回 true
+func evalCompare(expr string) bool {
+	// 先尝试双字符运算符 >=, <=, !=
+	for _, op := range []string{">=", "<=", "!="} {
+		if parts := strings.SplitN(expr, op, 2); len(parts) == 2 {
+			left, _ := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+			right, _ := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+			switch op {
+			case ">=":
+				return left >= right
+			case "<=":
+				return left <= right
+			case "!=":
+				return left != right
+			}
+		}
+	}
+	// 再试单字符运算符 =, >, <
+	for _, op := range []string{"=", ">", "<"} {
+		if parts := strings.SplitN(expr, op, 2); len(parts) == 2 {
+			left, _ := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+			right, _ := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+			switch op {
+			case "=":
+				return left == right
+			case ">":
+				return left > right
+			case "<":
+				return left < right
+			}
+		}
+	}
+	return false
 }
 
 // 投喂服务器文本
