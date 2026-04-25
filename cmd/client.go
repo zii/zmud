@@ -192,6 +192,9 @@ func (c *Client) doSystemCmd(input string) {
 			c.script = nil
 			fmt.Println("脚本已停止")
 		}
+	} else if input == "/debug" {
+		lib.DEBUG = !lib.DEBUG
+		fmt.Printf("调试模式: %v\n", lib.DEBUG)
 	} else if input == "/alias" {
 		var n int
 		c.db.View(func(tx *lmdb.Tx) error {
@@ -745,6 +748,7 @@ func (c *Client) loadAliases() {
 		return nil
 	})
 }
+
 
 // 检查 SKIP 触发器，返回(原文的分行, 去除颜色的分行)
 func (c *Client) checkSkip(text string) ([]string, []string) {

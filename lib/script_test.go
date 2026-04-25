@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+
 // makePattern glob -> regex 转换
 func TestMakePattern_GlobToRegex(t *testing.T) {
 	re := makePattern("气血*/*")
@@ -757,5 +758,180 @@ func TestExpandAlias(t *testing.T) {
 				t.Errorf("ExpandAlias() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// makePattern OR 测试
+func TestMakePattern_Or(t *testing.T) {
+	re := makePattern("#*,aa|#aa,*")
+	if re == nil {
+		t.Fatal("#*,aa|#aa,* 应生成合法 regex")
+	}
+	// 第一条匹配
+	subs := re.FindStringSubmatch("#hello,aa")
+	if subs == nil {
+		t.Fatal("应匹配 #hello,aa")
+	}
+	if len(subs) < 3 {
+		t.Fatalf("应有 2 个捕获组, 实际=%d", len(subs)-1)
+	}
+	// 第二条匹配
+	subs2 := re.FindStringSubmatch("#aa,world")
+	if subs2 == nil {
+		t.Fatal("应匹配 #aa,world")
+	}
+	if len(subs2) < 3 {
+		t.Fatalf("应有 2 个捕获组, 实际=%d", len(subs2)-1)
+	}
+}
+
+func TestMakePattern_OrNamedCapture(t *testing.T) {
+	re := makePattern("#*,aa|#aa,{nl}")
+	if re == nil {
+		t.Fatal("应生成合法 regex")
+	}
+	// 第二条匹配，提取 {nl}
+	subs := re.FindStringSubmatch("#aa,hello")
+	if subs == nil {
+		t.Fatal("应匹配 #aa,hello")
+	}
+	names := re.SubexpNames()
+	nlIdx := -1
+	for i, n := range names {
+		if n == "nl" {
+			nlIdx = i
+			break
+		}
+	}
+	if nlIdx < 0 {
+		t.Fatal("应有命名捕获 nl")
+	}
+	if subs[nlIdx] != "hello" {
+		t.Fatalf("nl 应为 hello, 实际=[%s]", subs[nlIdx])
+	}
+}
+
+func TestMakePattern_OrPlainText(t *testing.T) {
+	re := makePattern("醒来|drink")
+	if re == nil {
+		t.Fatal("醒来|drink 应生成合法 regex")
+	}
+	if !re.MatchString("你睡了一觉,终于醒来") {
+		t.Fatal("应匹配包含'醒来'的文本")
+	}
+	if !re.MatchString("drink jiudai") {
+		t.Fatal("应匹配包含 drink 的文本")
+	}
+}
+
+func TestMakePattern_OrNoPipe(t *testing.T) {
+	// 不含 | 时应和原来一样
+	re := makePattern("气血*/*")
+	if re == nil {
+		t.Fatal("气血*/* 应生成合法 regex")
+	}
+	if !re.MatchString("气血】 230/230") {
+		t.Fatal("应匹配正常模式")
+	}
+}
+
+// waitKeyword OR 集成测试
+func TestWaitKeyword_OrMatchFirst(t *testing.T) {
+	wc := make(chan string, 10)
+	s := NewScript(wc, nil)
+
+	done := make(chan bool)
+	go func() {
+		done <- s.waitKeyword("#*,aa|#aa,{nl}")
+	}()
+
+	s.waitCh <- "#hello,aa"
+
+	if !<-done {
+		t.Fatal("waitKeyword OR 应返回 true")
+	}
+	if VARS["1"] != "hello" {
+		t.Fatalf("vars[1] 应为 hello, 实际=[%s]", VARS["1"])
+	}
+}
+
+func TestWaitKeyword_OrMatchSecond(t *testing.T) {
+	wc := make(chan string, 10)
+	s := NewScript(wc, nil)
+
+	done := make(chan bool)
+	go func() {
+		done <- s.waitKeyword("#*,aa|#aa,{nl}")
+	}()
+
+	s.waitCh <- "#aa,world"
+
+	if !<-done {
+		t.Fatal("waitKeyword OR 应返回 true")
+	}
+	if VARS["nl"] != "world" {
+		t.Fatalf("vars[nl] 应为 world, 实际=[%s]", VARS["nl"])
+	}
+}
+
+func TestWaitKeyword_OrPlainText(t *testing.T) {
+	wc := make(chan string, 10)
+	s := NewScript(wc, nil)
+
+	done := make(chan bool)
+	go func() {
+		done <- s.waitKeyword("醒来|drink")
+	}()
+
+	s.waitCh <- "你突然醒来"
+
+	if !<-done {
+		t.Fatal("waitKeyword 纯文本 OR 应返回 true")
+	}
+}
+
+// OR 条件编号 $C 测试
+func TestWaitKeyword_OrConditionVar(t *testing.T) {
+	wc := make(chan string, 10)
+	s := NewScript(wc, nil)
+
+	done := make(chan bool)
+	go func() {
+		done <- s.waitKeyword("#xx,*|#*,xx")
+	}()
+
+	s.waitCh <- "#abc,xx"
+
+	if !<-done {
+		t.Fatal("waitKeyword OR 应返回 true")
+	}
+	if VARS["C"] != "2" {
+		t.Fatalf("$C 应为 2（第2条匹配）, 实际=[%s]", VARS["C"])
+	}
+	if VARS["2"] != "abc" {
+		t.Fatalf("$2 应为 abc, 实际=[%s]", VARS["1"])
+	}
+}
+
+// #if break 终止脚本
+func TestRun_IfBreak(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["nl"] = "150"
+	defer delete(VARS, "nl")
+	s := NewScript(wc, nil)
+
+	go s.Run("dazuo;#if $nl>100 break;sleep")
+
+	cmd1 := <-wc
+	if cmd1 != "dazuo" {
+		t.Fatalf("第1条应为 dazuo, 实际=[%s]", cmd1)
+	}
+	// #if $nl>100 break → 150>100 → true → return，脚本终止
+	// sleep 不应被执行
+	select {
+	case cmd2 := <-wc:
+		t.Fatalf("break 后不应有命令, 收到=[%s]", cmd2)
+	default:
+		// 没收到命令，正确
 	}
 }

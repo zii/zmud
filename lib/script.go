@@ -28,6 +28,9 @@ import (
 // 全局变量，跨脚本共享捕获的变量
 var VARS = map[string]string{}
 
+// 是否打印调试信息
+var DEBUG bool
+
 type Script struct {
 	wc      chan string       // 命令发送管道
 	waitCh  chan string       // 服务器文本管道
@@ -84,7 +87,12 @@ func (s *Script) Run(input string) {
 // 处理命令序列，支持 #loop/#jmp/#wa/%N/#N/cmd:keyword 及别名展开
 func (s *Script) processCmds(cmds []string) {
 	for i := 0; i < len(cmds); i++ {
-		//fmt.Printf("[script:%d] %s\n", i, cmds[i])
+		if s.stopped() {
+			return
+		}
+		if DEBUG {
+			fmt.Printf("[script:%d] %s\n", i, cmds[i])
+		}
 		if i > 0 {
 			time.Sleep(200 * time.Millisecond)
 		}
@@ -127,6 +135,9 @@ func (s *Script) processCmds(cmds []string) {
 							n = 1
 						}
 						i = n - 2 // -2 因为 for 循环有 i++
+					} else if action == "break" {
+						// break → 终止脚本
+						return
 					} else {
 						// 命令 → 执行
 						s.executeCmd(action)
@@ -170,11 +181,11 @@ func (s *Script) processCmds(cmds []string) {
 			// 关键字等待
 			if idx := strings.Index(cmd, ":"); idx > 0 {
 				keyword := strings.TrimSpace(cmd[idx+1:])
-				cmd = strings.TrimSpace(cmd[:idx])
-				if expanded, ok := ExpandAlias(s.aliases, cmd); ok {
+				raw := strings.TrimSpace(cmd[:idx])
+				if expanded, ok := ExpandAlias(s.aliases, raw); ok {
 					s.processCmds(strings.Split(expanded, ";"))
 				} else {
-					s.wc <- s.subst(cmd)
+					s.sendCmd(raw)
 				}
 				if !s.waitKeyword(keyword) {
 					return
@@ -228,6 +239,15 @@ func (s *Script) wait(d time.Duration) bool {
 func (s *Script) waitKeyword(keyword string) bool {
 	timeout := time.After(s.timeout)
 	re := makePattern(keyword)
+	// 预编译 OR 子条件
+	parts := splitOr(keyword)
+	var subRes []*regexp.Regexp
+	if len(parts) > 1 {
+		subRes = make([]*regexp.Regexp, len(parts))
+		for i, part := range parts {
+			subRes[i] = makePattern(part)
+		}
+	}
 
 	for {
 		select {
@@ -245,6 +265,16 @@ func (s *Script) waitKeyword(keyword string) bool {
 				for i, name := range re.SubexpNames() {
 					if name != "" && i < len(subs) {
 						VARS[name] = strings.TrimSpace(subs[i])
+					}
+				}
+				// OR 条件编号
+				for ci, subRe := range subRes {
+					if subRe != nil && subRe.MatchString(text) {
+						VARS["C"] = strconv.Itoa(ci + 1)
+						break
+					} else if subRe == nil && strings.Contains(text, parts[ci]) {
+						VARS["C"] = strconv.Itoa(ci + 1)
+						break
 					}
 				}
 				return true
@@ -292,13 +322,21 @@ func hasNextLiteral(runes []rune, i int) bool {
 
 // 将包含通配符和命名捕获的关键字转为正则表达式
 //
-//	{name} → 命名捕获组 (.*)
-//	*      → 位置捕获组 (.*)
+//	{name} → 命名捕获组 (?P<name>...)
+//	*      → 位置捕获组 (.*?)
 //	?      → 单字符捕获组 (.)
-//	其余 regex 元字符自动转义
+//	|      → 多条件或（在 {} 外时）
 //
 // 返回编译好的 regex（{name} 内嵌为 (?P<name>...) 以便 SubexpNames 正确映射）
 func makePattern(keyword string) *regexp.Regexp {
+	parts := splitOr(keyword)
+	if len(parts) > 1 {
+		if re := makeOrPattern(parts); re != nil {
+			return re
+		}
+		// 编译失败则 fall through 让 | 作为字面字符处理
+	}
+
 	hasGlob := strings.ContainsAny(keyword, "*?")
 	hasNamed := strings.Contains(keyword, "{")
 
@@ -544,6 +582,21 @@ func (s *Script) Running() bool {
 	return s.running
 }
 
+// 检查是否收到中断信号
+func (s *Script) stopped() bool {
+	select {
+	case <-s.stopCh:
+		return true
+	default:
+		return false
+	}
+}
+
+// 发送命令到服务器（经过变量替换）
+func (s *Script) sendCmd(raw string) {
+	s.wc <- s.subst(raw)
+}
+
 // 执行单条命令，支持关键字等待格式 cmd:keyword 和别名展开
 func (s *Script) executeCmd(cmd string) {
 	cmd = strings.TrimSpace(cmd)
@@ -557,15 +610,18 @@ func (s *Script) executeCmd(cmd string) {
 		if expanded, ok := ExpandAlias(s.aliases, cmd); ok {
 			s.processCmds(strings.Split(expanded, ";"))
 		} else {
-			s.wc <- s.subst(cmd)
+			s.sendCmd(cmd)
 		}
-		s.waitKeyword(keyword)
+		if !s.waitKeyword(keyword) {
+			return
+		}
+
 	} else {
 		if expanded, ok := ExpandAlias(s.aliases, cmd); ok {
 			s.processCmds(strings.Split(expanded, ";"))
 			return
 		}
-		s.wc <- s.subst(cmd)
+		s.sendCmd(cmd)
 	}
 }
 
@@ -598,4 +654,65 @@ func ExpandAlias(aliases map[string]string, cmd string) (string, bool) {
 		}
 	}
 	return result, true
+}
+
+// splitOr 按 | 分割关键字，跳过 {} 内的 |
+func splitOr(s string) []string {
+	var parts []string
+	depth := 0
+	start := 0
+	for i, r := range s {
+		switch r {
+		case '{':
+			depth++
+		case '}':
+			depth--
+		case '|':
+			if depth == 0 {
+				if i > start {
+					parts = append(parts, s[start:i])
+				}
+				start = i + 1
+			}
+		}
+	}
+	if start < len(s) {
+		parts = append(parts, s[start:])
+	}
+	// 过滤空字符串
+	var result []string
+	for _, p := range parts {
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// makeOrPattern 将多个匹配条件编译为带 alternation 的单个 regex
+// 各条件的捕获组按顺序编号：条件1 的 *→$1，条件2 的 *→$2
+func makeOrPattern(parts []string) *regexp.Regexp {
+	var buf strings.Builder
+	buf.WriteString("(?s)")
+	for i, part := range parts {
+		if i > 0 {
+			buf.WriteString("|")
+		}
+		sub := makePattern(part)
+		if sub != nil {
+			s := strings.TrimPrefix(sub.String(), "(?s)")
+			buf.WriteString("(?:")
+			buf.WriteString(s)
+			buf.WriteString(")")
+		} else {
+			buf.WriteString("(?:")
+			buf.WriteString(regexp.QuoteMeta(part))
+			buf.WriteString(")")
+		}
+	}
+	re, err := regexp.Compile(buf.String())
+	if err != nil {
+		return nil
+	}
+	return re
 }
