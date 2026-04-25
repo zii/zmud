@@ -844,7 +844,7 @@ mainLoop:
 					pos -= n
 					s.needRefresh = true
 				}
-			case ctrlU: // Erase line before cursor
+			case ctrlU, esc: // Erase line before cursor
 				if killAction > 0 {
 					s.addToKillRing(line[:pos], 2) // Add in prepend mode
 				} else {
@@ -874,9 +874,6 @@ mainLoop:
 			case tab: // Tab completion
 				line, pos, next, err = s.tabComplete(p, line, pos)
 				goto haveNext
-			// Catch keys that do nothing, but you don't want them to beep
-			case esc:
-				// DO NOTHING
 			// Unused keys
 			case ctrlG, ctrlO, ctrlQ, ctrlS, ctrlV, ctrlX, ctrlZ:
 				fallthrough
