@@ -171,7 +171,7 @@ func (s *Script) processCmds(cmds []string) {
 			if idx := strings.Index(cmd, ":"); idx > 0 {
 				keyword := strings.TrimSpace(cmd[idx+1:])
 				cmd = strings.TrimSpace(cmd[:idx])
-				if expanded, ok := s.aliases[cmd]; ok {
+				if expanded, ok := ExpandAlias(s.aliases, cmd); ok {
 					s.processCmds(strings.Split(expanded, ";"))
 				} else {
 					s.wc <- s.subst(cmd)
@@ -554,17 +554,48 @@ func (s *Script) executeCmd(cmd string) {
 	if idx := strings.Index(cmd, ":"); idx > 0 {
 		keyword := strings.TrimSpace(cmd[idx+1:])
 		cmd = strings.TrimSpace(cmd[:idx])
-		if expanded, ok := s.aliases[cmd]; ok {
+		if expanded, ok := ExpandAlias(s.aliases, cmd); ok {
 			s.processCmds(strings.Split(expanded, ";"))
 		} else {
 			s.wc <- s.subst(cmd)
 		}
 		s.waitKeyword(keyword)
 	} else {
-		if expanded, ok := s.aliases[cmd]; ok {
+		if expanded, ok := ExpandAlias(s.aliases, cmd); ok {
 			s.processCmds(strings.Split(expanded, ";"))
 			return
 		}
 		s.wc <- s.subst(cmd)
 	}
+}
+
+// ExpandAlias 查找并展开别名，替换 $A1-$A9 位置参数
+// 取 cmd 第一个空格前的单词作为别名名称，剩余部分按空格拆分为参数
+// 返回展开后的字符串和是否找到别名
+func ExpandAlias(aliases map[string]string, cmd string) (string, bool) {
+	idx := strings.IndexByte(cmd, ' ')
+	var name, args string
+	if idx > 0 {
+		name = cmd[:idx]
+		args = strings.TrimSpace(cmd[idx+1:])
+	} else {
+		name = cmd
+	}
+	template, ok := aliases[name]
+	if !ok {
+		return cmd, false
+	}
+	argParts := strings.Fields(args)
+	result := template
+	for i := 9; i >= 1; i-- {
+		key := fmt.Sprintf("$A%d", i)
+		if strings.Contains(result, key) {
+			if i-1 < len(argParts) {
+				result = strings.ReplaceAll(result, key, argParts[i-1])
+			} else {
+				result = strings.ReplaceAll(result, key, "")
+			}
+		}
+	}
+	return result, true
 }

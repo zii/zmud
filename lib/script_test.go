@@ -729,3 +729,33 @@ func TestRun_IfExecCmdWithKeyword(t *testing.T) {
 		t.Fatalf("#if 后应为 sleep, 实际=[%s]", cmd2)
 	}
 }
+
+// ExpandAlias 测试
+func TestExpandAlias(t *testing.T) {
+	tests := []struct {
+		name    string
+		aliases map[string]string
+		input   string
+		want    string
+		wantOk  bool
+	}{
+		{"无参别名", map[string]string{"chi": "drink"}, "chi", "drink", true},
+		{"单参数", map[string]string{"chi": "eat $A1"}, "chi jitui", "eat jitui", true},
+		{"多参数", map[string]string{"ci": "eat $A1 $A2"}, "ci jitui ya", "eat jitui ya", true},
+		{"参数不足", map[string]string{"chi": "eat $A1 and $A2"}, "chi jitui", "eat jitui and ", true},
+		{"别名不存在", map[string]string{}, "unknown", "unknown", false},
+		{"保留 $name 变量", map[string]string{"chi": "eat $A1 $hp"}, "chi jitui", "eat jitui $hp", true},
+		{"多参无参", map[string]string{"chi": "drink"}, "chi jitui", "drink", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := ExpandAlias(tt.aliases, tt.input)
+			if ok != tt.wantOk {
+				t.Errorf("ExpandAlias() ok = %v, want %v", ok, tt.wantOk)
+			}
+			if got != tt.want {
+				t.Errorf("ExpandAlias() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

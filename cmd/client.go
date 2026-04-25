@@ -461,16 +461,11 @@ func (c *Client) inputLoop() {
 			c.doSystemCmd(input)
 			continue
 		}
-		// 检查别名
-		if c.db != nil && input != "" {
-			var val string
-			c.db.View(func(tx *lmdb.Tx) error {
-				val, _ = tx.Get("alias:" + input)
-				return nil
-			})
-			if val != "" {
-				fmt.Printf("❯ %s -> %s\n", input, val)
-				input = val
+		// 检查别名（支持 $A1-$A9 位置参数）
+		if len(c.aliases) > 0 && input != "" {
+			if expanded, ok := lib.ExpandAlias(c.aliases, input); ok {
+				fmt.Printf("❯ %s -> %s\n", input, expanded)
+				input = expanded
 			}
 		}
 		// 发送到服务器
