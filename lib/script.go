@@ -615,7 +615,6 @@ func (s *Script) executeCmd(cmd string) {
 		if !s.waitKeyword(keyword) {
 			return
 		}
-
 	} else {
 		if expanded, ok := ExpandAlias(s.aliases, cmd); ok {
 			s.processCmds(strings.Split(expanded, ";"))

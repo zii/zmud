@@ -935,3 +935,60 @@ func TestRun_IfBreak(t *testing.T) {
 		// 没收到命令，正确
 	}
 }
+
+
+// * 作为 OR 通配符兜底测试
+// hp:#{hp},xx|* → 匹配 #{hp},xx 时走条件1，否则走条件2（*）立即结束等待
+func TestWaitKeyword_OrCatchAll(t *testing.T) {
+	wc := make(chan string, 10)
+	s := NewScript(wc, nil)
+
+	// 场景1：特定条件匹配
+	done := make(chan bool)
+	go func() {
+		done <- s.waitKeyword("#{hp},xx|*")
+	}()
+
+	s.waitCh <- "#123,xx"
+	if !<-done {
+		t.Fatal("OR 匹配 #{hp},xx 应返回 true")
+	}
+	if VARS["hp"] != "123" {
+		t.Fatalf("$hp 应为 123, 实际=[%s]", VARS["hp"])
+	}
+	if VARS["C"] != "1" {
+		t.Fatalf("$C 应为 1（条件1匹配）, 实际=[%s]", VARS["C"])
+	}
+
+	// 场景2：兜底匹配（* 通配符）
+	done2 := make(chan bool)
+	go func() {
+		done2 <- s.waitKeyword("#{hp},xx|*")
+	}()
+
+	s.waitCh <- "你受到50点伤害"
+	if !<-done2 {
+		t.Fatal("OR 兜底 * 应返回 true")
+	}
+	if VARS["C"] != "2" {
+		t.Fatalf("$C 应为 2（条件2兜底）, 实际=[%s]", VARS["C"])
+	}
+	// hp 命名捕获组未参与匹配，应为空字符串
+	if VARS["hp"] != "" {
+		t.Fatalf("$hp 应为空（未匹配）, 实际=[%s]", VARS["hp"])
+	}
+
+	// 场景3：纯 * 作为整个关键字，匹配任何文本
+	done3 := make(chan bool)
+	go func() {
+		done3 <- s.waitKeyword("*")
+	}()
+
+	s.waitCh <- "任意文本abc"
+	if !<-done3 {
+		t.Fatal("纯 * 应匹配任意文本")
+	}
+	if VARS["1"] != "任意文本abc" {
+		t.Fatalf("$1 应捕获完整文本, 实际=[%s]", VARS["1"])
+	}
+}

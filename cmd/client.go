@@ -200,7 +200,7 @@ func (c *Client) doSystemCmd(input string) {
 		c.db.View(func(tx *lmdb.Tx) error {
 			tx.AscendKeys("alias:*", func(key, value string) bool {
 				name := key[6:]
-				fmt.Printf("  %s -> %s\n", name, value)
+				fmt.Printf("/alias %s %s\n", name, value)
 				n++
 				return true
 			})
@@ -220,7 +220,7 @@ func (c *Client) doSystemCmd(input string) {
 				return nil
 			})
 			if val != "" {
-				fmt.Printf("  %s -> %s\n", key, val)
+				fmt.Printf("/alias %s %s\n", key, val)
 			} else {
 				fmt.Println("别名不存在:", name)
 			}
@@ -748,7 +748,6 @@ func (c *Client) loadAliases() {
 		return nil
 	})
 }
-
 
 // 检查 SKIP 触发器，返回(原文的分行, 去除颜色的分行)
 func (c *Client) checkSkip(text string) ([]string, []string) {
