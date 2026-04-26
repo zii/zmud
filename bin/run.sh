@@ -13,7 +13,7 @@ case "$1" in
 		CC="zig cc -target x86_64-linux-gnu" \
 		CXX="zig c++ -target x86_64-linux-gnu" \
 		go build -o zmud zmud/cmd
-	rsync -rutz ./zmud root@sg1:zmud/
+	rsync -rutz ./zmud root@sg1:/usr/local/bin
 	;;
 *)
 	echo "Usage: $0 [1|2]"
