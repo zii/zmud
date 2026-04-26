@@ -6,3 +6,4 @@ zmud
 .claude
 release
 *.test
+/dist
