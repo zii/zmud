@@ -992,3 +992,50 @@ func TestWaitKeyword_OrCatchAll(t *testing.T) {
 		t.Fatalf("$1 应捕获完整文本, 实际=[%s]", VARS["1"])
 	}
 }
+
+// #jmp 相对位置跳转支持 +/-
+func TestRun_JmpRelative(t *testing.T) {
+	wc := make(chan string, 20)
+	s := NewScript(wc, map[string]string{})
+
+	go s.Run("e;s;n;#jmp -1;w")
+
+	// cmds = [0:e, 1:s, 2:n, 3:#jmp-1, 4:w]
+	// #jmp -1: i=3, targetIdx = 3+(-1) = 2 (n)
+	cmds := []string{}
+	for i := 0; i < 4; i++ {
+		cmd := <-wc
+		cmds = append(cmds, cmd)
+	}
+
+	expected := []string{"e", "s", "n", "n"}
+	for i, exp := range expected {
+		if cmds[i] != exp {
+			t.Fatalf("命令%d应为 %s, 实际=[%s]", i+1, exp, cmds[i])
+		}
+	}
+}
+
+// #jmp +N 往右跳
+func TestRun_JmpPositiveRelative(t *testing.T) {
+	wc := make(chan string, 20)
+	s := NewScript(wc, map[string]string{})
+
+	go s.Run("e;#jmp +2;w;s;n")
+
+	// cmds = [0:e, 1:#jmp+2, 2:w, 3:s, 4:n]
+	// #jmp +2: i=1, targetIdx = 1+2 = 3 (s), i++→4
+	// 跳过 w(2), 直接到 s(3), n(4)
+	cmds := []string{}
+	for i := 0; i < 3; i++ {
+		cmd := <-wc
+		cmds = append(cmds, cmd)
+	}
+
+	expected := []string{"e", "s", "n"}
+	for i, exp := range expected {
+		if cmds[i] != exp {
+			t.Fatalf("命令%d应为 %s, 实际=[%s]", i+1, exp, cmds[i])
+		}
+	}
+}

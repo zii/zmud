@@ -5,3 +5,4 @@ zmud
 *.db
 .claude
 release
+*.test

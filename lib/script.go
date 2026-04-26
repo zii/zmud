@@ -38,6 +38,7 @@ type Script struct {
 	timeout time.Duration     // 命令执行超时时间
 	running bool              // 标记是否正在运行
 	aliases map[string]string // 别名快照（NewScript 时从 client 复制）
+	gap     time.Duration     // 命令之间强行停顿一下(秒)
 }
 
 // 创建新的脚本引擎，aliases 为别名快照（内部会复制一份）
@@ -52,6 +53,7 @@ func NewScript(wc chan string, aliases map[string]string) *Script {
 		stopCh:  make(chan struct{}),
 		timeout: 300 * time.Second,
 		aliases: a,
+		gap:     200 * time.Millisecond,
 	}
 }
 
@@ -94,7 +96,10 @@ func (s *Script) processCmds(cmds []string) {
 			fmt.Printf("[script:%d] %s\n", i, cmds[i])
 		}
 		if i > 0 {
-			time.Sleep(200 * time.Millisecond)
+			d := s.gap / 2
+			if !s.wait(s.gap - d/2 + rand.N(d)) {
+				return
+			}
 		}
 		cmd := strings.TrimSpace(cmds[i])
 		if cmd == "" {
@@ -111,13 +116,30 @@ func (s *Script) processCmds(cmds []string) {
 			i = -1 // 重置索引，下次循环从 0 开始
 			continue
 		}
-		// #jmp N：跳转到第 N 条命令
+		// #jmp N 或 #jmp +N / #jmp -N：相对跳转
 		if cmd, ok := strings.CutPrefix(cmd, "#jmp"); ok {
-			n, _ := strconv.Atoi(strings.TrimSpace(cmd))
-			if n <= 0 {
-				n = 1
+			offsetStr := strings.TrimSpace(cmd)
+			isRelative := false
+			if len(offsetStr) > 0 && (offsetStr[0] == '+' || offsetStr[0] == '-') {
+				isRelative = true
 			}
-			i = n - 2 // -2 因为 for 循环有 i++
+			if !isRelative {
+				// 绝对跳转：原逻辑（1-based 行号）
+				n, _ := strconv.Atoi(offsetStr)
+				if n <= 0 {
+					n = 1
+				}
+				i = n - 2
+			} else {
+				// 相对跳转：从 #jmp 当前位置偏移
+				// -N: 往左跳 N 步, +N: 往右跳 N 步
+				offset, _ := strconv.Atoi(offsetStr)
+				targetIdx := i + offset
+				if targetIdx < 0 {
+					targetIdx = 0
+				}
+				i = targetIdx - 1 // -1 补偿 for 循环的 i++
+			}
 			continue
 		}
 		// #if <expr> <action>: 条件跳转或执行命令
@@ -152,6 +174,12 @@ func (s *Script) processCmds(cmds []string) {
 			if !s.wait(duration) {
 				return
 			}
+			continue
+		}
+		// #gap 指令：设置停顿时长
+		if cmd, ok := strings.CutPrefix(cmd, "#gap"); ok {
+			duration := parseDuration(cmd)
+			s.gap = duration
 			continue
 		}
 		// %N 指令: 概率执行（如 %20 drink）
