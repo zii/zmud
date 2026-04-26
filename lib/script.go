@@ -145,23 +145,23 @@ func (s *Script) processCmds(cmds []string) {
 		// #if <expr> <action>: 条件跳转或执行命令
 		if cmd, ok := strings.CutPrefix(cmd, "#if"); ok {
 			rest := strings.TrimSpace(cmd)
-			expanded := s.subst(rest) // 展开 $var → 如 "250>100 drink"
-			firstSpace := strings.IndexByte(expanded, ' ')
-			if firstSpace > 0 {
-				expr := strings.TrimSpace(expanded[:firstSpace])
-				action := strings.TrimSpace(expanded[firstSpace+1:])
+			expanded := s.subst(rest)
+
+			// 从操作符右侧找到 action 的起始位置
+			splitPos := findActionSplitPos(expanded)
+
+			if splitPos > 0 {
+				expr := strings.TrimSpace(expanded[:splitPos])
+				action := strings.TrimSpace(expanded[splitPos+1:])
 				if evalCompare(expr) {
 					if n, err := strconv.Atoi(action); err == nil {
-						// 数字 → 跳转
 						if n <= 0 {
 							n = 1
 						}
-						i = n - 2 // -2 因为 for 循环有 i++
+						i = n - 2
 					} else if action == "break" {
-						// break → 终止脚本
 						return
 					} else {
-						// 命令 → 执行
 						s.executeCmd(action)
 					}
 				}
@@ -555,37 +555,167 @@ func isDigit(b byte) bool {
 	return b >= '0' && b <= '9'
 }
 
+// findActionSplitPos 从操作符后找到 action 的起始位置
+// expanded: 展开后的完整字符串，如"东 边="东 边""或"250>100 drink"
+func findActionSplitPos(expanded string) int {
+	// 找到最后一个运算符（优先级从高到低）
+	var opIdx, opLen int
+	for _, candidate := range []string{">=", "<=", "!=", "=", ">", "<"} {
+		if idx := strings.Index(expanded, candidate); idx >= 0 && idx > opIdx {
+			opIdx = idx
+			opLen = len(candidate)
+		}
+	}
+
+	start := opIdx + opLen
+	for start < len(expanded) && expanded[start] == ' ' {
+		start++
+	}
+
+	if start < len(expanded) && expanded[start] == '"' {
+		for i := start + 1; i < len(expanded); i++ {
+			if expanded[i] == '"' {
+				return i + 1
+			}
+		}
+	}
+
+	return strings.IndexByte(expanded[start:], ' ') + start
+}
+
 // 解析并计算比较表达式，如 "250>100" 返回 true
 func evalCompare(expr string) bool {
 	// 先尝试双字符运算符 >=, <=, !=
 	for _, op := range []string{">=", "<=", "!="} {
 		if parts := strings.SplitN(expr, op, 2); len(parts) == 2 {
-			left, _ := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
-			right, _ := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+			left := strings.TrimSpace(parts[0])
+			right := strings.TrimSpace(parts[1])
+
+			leftQuoted := isQuoted(left)
+			rightQuoted := isQuoted(right)
+
+			// 如果任意一边是双引号包裹，优先进行字符串比较
+			if leftQuoted || rightQuoted {
+				var l, r string
+				if leftQuoted {
+					l = strings.Trim(left, `"`)
+				} else {
+					l = left
+				}
+				if rightQuoted {
+					r = strings.Trim(right, `"`)
+				} else {
+					r = right
+				}
+				return compareStrings(l, r, op)
+			}
+
+			// 尝试数字比较
+			l, err1 := strconv.ParseFloat(left, 64)
+			r, err2 := strconv.ParseFloat(right, 64)
+
+			// 两边都能解析为数字 → 数字比较
+			if err1 == nil && err2 == nil {
+				switch op {
+				case ">=":
+					return l >= r
+				case "<=":
+					return l <= r
+				case "!=":
+					return l != r
+				}
+			} else if err1 != nil && err2 != nil {
+				// 两边都不是数字且是 = 或!= → 字符串比较（带 trim）
+				if op == "=" || op == "!=" {
+					return compareStrings(strings.TrimSpace(left), strings.TrimSpace(right), op)
+				}
+				// > < <= >= 对非数字仍 fallback 到数字比较 (0)
+			}
+
+			// 数字比较（失败则为 0）
 			switch op {
 			case ">=":
-				return left >= right
+				return l >= r
 			case "<=":
-				return left <= right
+				return l <= r
 			case "!=":
-				return left != right
+				return l != r
 			}
 		}
 	}
 	// 再试单字符运算符 =, >, <
 	for _, op := range []string{"=", ">", "<"} {
 		if parts := strings.SplitN(expr, op, 2); len(parts) == 2 {
-			left, _ := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
-			right, _ := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+			left := strings.TrimSpace(parts[0])
+			right := strings.TrimSpace(parts[1])
+
+			leftQuoted := isQuoted(left)
+			rightQuoted := isQuoted(right)
+
+			// 如果任意一边是双引号包裹，优先进行字符串比较
+			if leftQuoted || rightQuoted {
+				var l, r string
+				if leftQuoted {
+					l = strings.Trim(left, `"`)
+				} else {
+					l = left
+				}
+				if rightQuoted {
+					r = strings.Trim(right, `"`)
+				} else {
+					r = right
+				}
+				return compareStrings(l, r, op)
+			}
+
+			// 尝试数字比较
+			l, err1 := strconv.ParseFloat(left, 64)
+			r, err2 := strconv.ParseFloat(right, 64)
+
+			// 两边都能解析为数字 → 数字比较
+			if err1 == nil && err2 == nil {
+				switch op {
+				case "=":
+					return l == r
+				case ">":
+					return l > r
+				case "<":
+					return l < r
+				}
+			} else if err1 != nil && err2 != nil {
+				// 两边都不是数字 → 字符串相等比较（带 trim）
+				if op == "=" {
+					return strings.TrimSpace(left) == strings.TrimSpace(right)
+				}
+				// > < 对非数字 fallback 到数字比较 (0)
+			}
+
+			// 数字比较（失败则为 0）
 			switch op {
 			case "=":
-				return left == right
+				return l == r
 			case ">":
-				return left > right
+				return l > r
 			case "<":
-				return left < right
+				return l < r
 			}
 		}
+	}
+	return false
+}
+
+// 判断字符串是否被双引号包裹
+func isQuoted(s string) bool {
+	return len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"'
+}
+
+// 字符串比较
+func compareStrings(left, right, op string) bool {
+	switch op {
+	case "=":
+		return left == right
+	case "!=":
+		return left != right
 	}
 	return false
 }

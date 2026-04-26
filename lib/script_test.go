@@ -1039,3 +1039,83 @@ func TestRun_JmpPositiveRelative(t *testing.T) {
 		}
 	}
 }
+
+// evalCompare 字符串比较
+func TestEvalCompare_String(t *testing.T) {
+	tests := []struct {
+		expr   string
+		expect bool
+	}{
+		{"东 = 东", true},            // 字符串相等
+		{"东!=西", true},          // 字符串不相等
+		{"东=西边", false},        // 字符串不相等
+		{`"东边"="东边"`, true},   // 带双引号的字符串相等
+		{`"东"!="西"`, true},      // 带双引号的字符串不相等
+		{`"a"="a"`, true},         // 纯字符串相等
+		{`"a"!="b"`, true},        // 纯字符串不相等
+		{`"abc"="abc"`, true},     // 多字符字符串
+		{`ab="b"`, false},         // $1 展开后与字符串比较：ab != b
+		{`ab="ab"`, true},         // $1 展开后与字符串比较：ab == ab
+		// 带空格的字符串 - 用户报告的问题
+		{`"东 边"="东 边"`, true},   // 带空格的字符串相等
+		{`东 边="东 边"`, true},    // 非引用变量等于带引号空格字符串
+	}
+	for _, tt := range tests {
+		result := evalCompare(tt.expr)
+		if result != tt.expect {
+			t.Errorf("evalCompare(%q) = %v, want %v", tt.expr, result, tt.expect)
+		}
+	}
+}
+
+// #if $1="东 边" 带空格的字符串比较
+func TestRun_IfStringWithSpaces(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["1"] = "东 边"
+	defer delete(VARS, "1")
+	s := NewScript(wc, nil)
+
+	done := make(chan bool)
+	go func() {
+		s.Run("say hello;#if $1=\"东 边\" say ok")
+		done <- true
+	}()
+
+	cmd1 := <-wc
+	if cmd1 != "say hello" {
+		t.Fatalf("第 1 条应为 say hello, 实际=[%s]", cmd1)
+	}
+
+	cmd2 := <-wc
+	if cmd2 != "say ok" {
+		t.Fatalf("条件真应执行 say ok, 实际=[%s]", cmd2)
+	}
+
+	<-done
+}
+
+// #if $1="东" 不带空格的字符串比较
+func TestRun_IfStringNoSpace(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["1"] = "东"
+	defer delete(VARS, "1")
+	s := NewScript(wc, nil)
+
+	done := make(chan bool)
+	go func() {
+		s.Run("say hi;#if $1=\"东\" say matched")
+		done <- true
+	}()
+
+	cmd1 := <-wc
+	if cmd1 != "say hi" {
+		t.Fatalf("第 1 条应为 say hi, 实际=[%s]", cmd1)
+	}
+
+	cmd2 := <-wc
+	if cmd2 != "say matched" {
+		t.Fatalf("条件真应执行 say matched, 实际=[%s]", cmd2)
+	}
+
+	<-done
+}
