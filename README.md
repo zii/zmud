@@ -1,9 +1,29 @@
 # zmud
 
-一款专为 MUD 游戏打造的智能翻译终端, 帮中国玩家跨越语言障碍, 体验古老的英文Mud.  
-结合AI助手, 大大缓解文字游戏难以上手的痛点.
+一款专为 MUD 游戏打造的智能翻译终端，帮中国玩家跨越语言障碍，体验古老的英文 Mud.
+结合 AI 助手，大大缓解文字游戏难以上手的痛点。
 
 <img src="screenshot.png" width="600">
+
+## v0.3 下载 (2026-04-26)
+
+| 平台 | 大小 | 下载地址 |
+|------|------|----------|
+| macOS Intel | 11MB | [zmud-darwin-amd64](https://github.com/zii/zmud/releases/download/v0.3/zmud-darwin-amd64) |
+| Linux x86_64 | 14MB | [zmud-linux-amd64](https://github.com/zii/zmud/releases/download/v0.3/zmud-linux-amd64) |
+| Windows x86_64 | 14MB | [zmud-windows-amd64.exe](https://github.com/zii/zmud/releases/download/v0.3/zmud-windows-amd64.exe) |
+
+### v0.3 新功能
+
+| 功能 | 说明 |
+|------|------|
+| `#gap N` | 设置命令间停顿时长（秒） |
+| `#jmp +/-N` | 相对位置跳转，`+N` 往右跳，`-N` 往左跳 |
+| `#if ... break` | 支持 break 关键字终止脚本 |
+| 别名 `$A1-$A9` | 位置参数支持，最多 9 个参数 |
+| Esc 清空输入 | 按 Esc 键快速清空当前输入行 |
+
+## 功能特性
 
 ## 功能特性
 
