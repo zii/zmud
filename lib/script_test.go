@@ -2,6 +2,7 @@ package lib
 
 import (
 	"testing"
+	"time"
 )
 
 
@@ -1254,3 +1255,27 @@ func TestRun_IfSingleAction_BackwardCompatible(t *testing.T) {
 	}
 }
 
+
+// #if 多 action：#wa 作为普通命令等待后执行后续
+func TestRun_IfMultiAction_WithWa(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["1"] = "东"
+	defer delete(VARS, "1")
+
+	s := NewScript(wc, nil)
+
+	start := time.Now()
+	go s.Run("#if $1=\"东\" #wa 1.5s,say hi")
+
+	// 应等待 1.5 秒后才收到 say hi
+	cmd := <-wc
+	elapsed := time.Since(start)
+
+	if cmd != "say hi" {
+		t.Fatalf("应为 say hi, 实际=[%s]", cmd)
+	}
+	// 验证确实等待了约 1.5 秒（容差 ±200ms）
+	if elapsed < 1300*time.Millisecond || elapsed > 1700*time.Millisecond {
+		t.Fatalf("等待时间异常: %v (期望 ~1.5s)", elapsed)
+	}
+}

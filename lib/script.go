@@ -161,6 +161,18 @@ func (s *Script) processCmds(cmds []string) {
 						if act == "" {
 							continue
 						}
+						// 处理 #wa 指令作为普通命令
+						if strings.HasPrefix(act, "#wa") {
+							durStr := strings.TrimSpace(act[3:])
+							if durStr == "" {
+								continue // 无参数则跳过
+							}
+							dur := parseDuration(durStr)
+							if !s.wait(dur) {
+								return // 等待失败终止脚本
+							}
+							continue // 等待成功，继续后续 actions
+						}
 						if n, err := strconv.Atoi(act); err == nil {
 							if n <= 0 {
 								n = 1
