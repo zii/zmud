@@ -82,7 +82,7 @@ look:正厅;e;kill 怪物;#wa 2s;#loop
 #if $hp<30 drink,eat,break
 
 # 内力充足则打坐，否则睡觉
-enforce:内力{nl}/*;#if $nl>100 dazuo,sleep
+enforce:内力{nl}|*;#if $nl>100 dazuo,sleep
 
 # 匹配"东"后等待1.5秒，然后说"到了"
 #if $1="东" #wa 1.5s,say 到了
@@ -134,7 +134,7 @@ enforce:内力{nl}|*;dazuo;#if $nl<100 1;sleep:醒来;#loop
 e;kill 小怪;#wa 3s;get all from corpse;#jmp 2
 
 # 例3：条件判断练功
-hp:气血{hp}/*;#if $hp<200 drink potion,say need heal
+hp:气血{hp}|*;#if $hp<200 drink potion,say need heal
 
 # 例4：等待特定回复后继续
 look:正厅;e:东厢房;sleep:醒来;w
