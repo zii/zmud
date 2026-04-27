@@ -98,10 +98,10 @@ dazuo;#if $nl<100 1;sleep:醒来;#loop
 
 ```
 # * 捕获第1段
-hp:气血*/*;dazuo $1        # → 气血 100/130 → dazuo 100
+hp:气血*|*;dazuo $1        # → 气血 100/130 → dazuo 100
 
 # {name} 命名捕获
-hp:气血{hp}/{maxhp};dazuo $hp  # → $hp=100
+hp:气血{hp}|{maxhp};dazuo $hp  # → $hp=100
 
 # 多个捕获
 look:你觉得*正在*;#say $1 $2
@@ -128,7 +128,7 @@ eat $full*0.8     # 吃到 80% 饱足度
 
 ```text
 # 例1：自动打坐练级（内力<100继续，否则睡觉）
-enforce:内力{nl}/*;dazuo;#if $nl<100 1;sleep:醒来;#loop
+enforce:内力{nl}|*;dazuo;#if $nl<100 1;sleep:醒来;#loop
 
 # 例2：循环刷怪
 e;kill 小怪;#wa 3s;get all from corpse;#jmp 2
@@ -140,7 +140,7 @@ hp:气血{hp}/*;#if $hp<200 drink potion,say need heal
 look:正厅;e:东厢房;sleep:醒来;w
 
 # 例5：别名与跳转结合
-/alias chihe hp:气血{hp}/*;drink $A1
+/alias chihe hp:气血{hp}|*;drink $A1
 chihe 100;#loop
 ```
 
@@ -149,7 +149,7 @@ chihe 100;#loop
 通过 `/alias` 定义命令缩写，支持位置参数 `$A1`~`$A9`。
 
 ```
-/alias chihe hp:气血{hp}/*;drink $A1
+/alias chihe hp:气血{hp}|*;drink $A1
 chihe 80    # 展开为：气血...;drink 80
 
 # 别名可在脚本中直接使用，索引不因展开而改变
