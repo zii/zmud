@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unicode"
 
 	"zmud/ansi"
@@ -58,6 +59,8 @@ type Client struct {
 	aliases     map[string]string // 别名缓存，写操作受 muAlias 保护
 	muAlias     sync.RWMutex
 	encoder     transform.Transformer // 编码器，缓存以提升性能
+	scriptPend  bool                  // 脚本中断待确认
+	pendAt      time.Time             // pending 开始时间
 }
 
 // 创建新的客户端实例，初始化所有通道和默认值
@@ -425,6 +428,25 @@ func (c *Client) readInput() {
 			break
 		}
 		input = strings.TrimSpace(input)
+		// === 中断确认逻辑（仅用户手动输入）===
+		if c.script != nil && c.script.Running() {
+			now := time.Now()
+			if c.scriptPend && now.Sub(c.pendAt) > 3*time.Second {
+				c.scriptPend = false
+			}
+			if c.scriptPend {
+				c.script.Stop()
+				c.script = nil
+				c.scriptPend = false
+				fmt.Println("(中断了当前脚本)")
+			} else {
+				c.scriptPend = true
+				c.pendAt = now
+				fmt.Println("(脚本运行中，确认中断?)")
+				continue
+			}
+		}
+		// === 中断确认逻辑结束 ===
 		// 添加到历史
 		// Prompt无限循环, 完全抢占了锁, 所以AppendHistory如果放在inputLoop会永远阻塞. 造成输入后屏幕不渲染.
 		if input != "" {
