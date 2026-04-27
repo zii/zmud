@@ -1119,3 +1119,138 @@ func TestRun_IfStringNoSpace(t *testing.T) {
 
 	<-done
 }
+
+// #if 多 action：条件真时依次执行多个命令
+func TestRun_IfMultiAction(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["nl"] = "150"
+	defer delete(VARS, "nl")
+
+	s := NewScript(wc, nil)
+
+	// #if $nl>100 say 1,sleep,dazuo → 条件真，应依次执行 say 1, sleep, dazuo 后终止
+	go s.Run("#if $nl>100 say 1,sleep,dazuo")
+
+	cmd1 := <-wc
+	if cmd1 != "say 1" {
+		t.Fatalf("第1条应为 say 1, 实际=[%s]", cmd1)
+	}
+
+	cmd2 := <-wc
+	if cmd2 != "sleep" {
+		t.Fatalf("第2条应为 sleep, 实际=[%s]", cmd2)
+	}
+
+	cmd3 := <-wc
+	if cmd3 != "dazuo" {
+		t.Fatalf("第3条应为 dazuo, 实际=[%s]", cmd3)
+	}
+}
+
+// #if 多 action：遇到跳转数字立即终止后续
+func TestRun_IfMultiAction_JumpEarly(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["nl"] = "150"
+	defer delete(VARS, "nl")
+
+	s := NewScript(wc, nil)
+
+	// #if $nl>100 1,sleep → 条件真，遇到数字1立即跳转，sleep不执行
+	// 脚本: cmd1="dazuo", cmd2="#if..."
+	// 跳转回第1条形成循环：dazuo;#if... → dazuo;#if... 无限循环
+	// 使用 done 信道配合 timeout 避免测试永久挂起
+	done := make(chan bool)
+	go func() {
+		s.Run("dazuo;#if $nl>100 1,sleep")
+		done <- true
+	}()
+
+	cmd1 := <-wc
+	if cmd1 != "dazuo" {
+		t.Fatalf("第1条应为 dazuo, 实际=[%s]", cmd1)
+	}
+
+	// 跳转回第1条，应再次执行 dazuo
+	cmd2 := <-wc
+	if cmd2 != "dazuo" {
+		t.Fatalf("跳转后应为 dazuo, 实际=[%s]", cmd2)
+	}
+
+	// 由于脚本跳转形成循环，需要主动停止
+	s.Stop()
+	<-done
+}
+
+// #if 多 action：break 终止后续
+func TestRun_IfMultiAction_BreakEarly(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["nl"] = "150"
+	defer delete(VARS, "nl")
+
+	s := NewScript(wc, nil)
+
+	// #if $nl>100 say ok,break,sleep → 条件真，say ok 后 break 终止
+	go s.Run("#if $nl>100 say ok,break,sleep")
+
+	cmd1 := <-wc
+	if cmd1 != "say ok" {
+		t.Fatalf("第1条应为 say ok, 实际=[%s]", cmd1)
+	}
+
+	// break 后不应有后续命令（非阻塞检查）
+	select {
+	case cmd := <-wc:
+		t.Fatalf("break 后不应有命令，实际=[%s]", cmd)
+	default:
+		// 正确：无后续命令
+	}
+}
+
+// #if 多 action：条件假时不动任何命令
+func TestRun_IfMultiAction_False(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["nl"] = "50"
+	defer delete(VARS, "nl")
+
+	s := NewScript(wc, nil)
+
+	// #if $nl>100 say 1,sleep,dazuo → 条件假，什么都不执行
+	go s.Run("#if $nl>100 say 1,sleep,dazuo")
+
+	// 条件假，没有命令被执行（非阻塞检查）
+	select {
+	case cmd := <-wc:
+		t.Fatalf("条件假不应执行命令，实际=[%s]", cmd)
+	default:
+		// 正确：无命令输出
+	}
+}
+
+// #if 单 action 向后兼容性：原始行为保持不变
+func TestRun_IfSingleAction_BackwardCompatible(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["nl"] = "150"
+	defer delete(VARS, "nl")
+
+	s := NewScript(wc, nil)
+
+	// 单个 action（无逗号）应正常工作
+	go s.Run("dazuo;#if $nl>100 drink;sleep")
+
+	cmd1 := <-wc
+	if cmd1 != "dazuo" {
+		t.Fatalf("第1条应为 dazuo, 实际=[%s]", cmd1)
+	}
+
+	// #if 真执行 drink
+	cmd2 := <-wc
+	if cmd2 != "drink" {
+		t.Fatalf("第2条应为 drink, 实际=[%s]", cmd2)
+	}
+
+	cmd3 := <-wc
+	if cmd3 != "sleep" {
+		t.Fatalf("第3条应为 sleep, 实际=[%s]", cmd3)
+	}
+}
+

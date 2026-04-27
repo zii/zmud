@@ -154,15 +154,24 @@ func (s *Script) processCmds(cmds []string) {
 				expr := strings.TrimSpace(expanded[:splitPos])
 				action := strings.TrimSpace(expanded[splitPos+1:])
 				if evalCompare(expr) {
-					if n, err := strconv.Atoi(action); err == nil {
-						if n <= 0 {
-							n = 1
+					// 支持多个 action（逗号分隔）
+					actions := strings.Split(action, ",")
+					for _, act := range actions {
+						act = strings.TrimSpace(act)
+						if act == "" {
+							continue
 						}
-						i = n - 2
-					} else if action == "break" {
-						return
-					} else {
-						s.executeCmd(action)
+						if n, err := strconv.Atoi(act); err == nil {
+							if n <= 0 {
+								n = 1
+							}
+							i = n - 2 // 跳转到第 n 条命令 (1-based → 0-based)
+							break     // 跳转后终止后续 actions
+						} else if act == "break" {
+							return // 终止脚本
+						} else {
+							s.executeCmd(act) // 执行单条命令
+						}
 					}
 				}
 			}
