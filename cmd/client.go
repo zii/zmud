@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -362,14 +363,10 @@ func (c *Client) completer(line string) []string {
 			pairs = append(pairs, pair{cmd, count})
 		}
 	}
-	// 按使用次数降序排序
-	for i := range pairs {
-		for j := i + 1; j < len(pairs); j++ {
-			if pairs[j].count > pairs[i].count {
-				pairs[i], pairs[j] = pairs[j], pairs[i]
-			}
-		}
-	}
+	// 按使用次数降序排序（稳定排序：次数相同保持插入顺序）
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].count > pairs[j].count
+	})
 	for _, p := range pairs {
 		if !seen[p.cmd] {
 			results = append(results, p.cmd)
