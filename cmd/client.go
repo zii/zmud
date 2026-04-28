@@ -428,33 +428,10 @@ func (c *Client) readInput() {
 			break
 		}
 		input = strings.TrimSpace(input)
-		// === 中断确认逻辑（仅非系统命令）===
-		if !strings.HasPrefix(input, "/") {
-			if c.script != nil && c.script.Running() {
-				now := time.Now()
-				if c.scriptPend {
-					if now.Sub(c.pendAt) > 3*time.Second {
-						c.scriptPend = false
-						fmt.Println("(中断请求超时，脚本继续运行)")
-					} else {
-						c.script.Stop()
-						if c.script.Running() {
-							fmt.Println("(中断了当前脚本)")
-						}
-						c.script = nil
-						c.scriptPend = false
-						fmt.Println("(脚本已中断)")
-						continue
-					}
-				} else {
-					c.scriptPend = true
-					c.pendAt = now
-					fmt.Println("(脚本运行中，确认中断?)")
-					continue
-				}
-			}
+		// 中断确认：返回 true 表示跳过此输入
+		if c.handleScriptInterrupt(input) {
+			continue
 		}
-		// === 中断确认逻辑结束 ===
 		// 添加到历史
 		// Prompt无限循环, 完全抢占了锁, 所以AppendHistory如果放在inputLoop会永远阻塞. 造成输入后屏幕不渲染.
 		if input != "" {
@@ -470,6 +447,44 @@ func (c *Client) readInput() {
 	}
 	close(c.wc) // 关闭命令管道，通知 sendLoop 退出
 	c.quit()
+}
+
+
+// handleScriptInterrupt 处理脚本中断确认逻辑
+// 返回 true 表示应跳过此次输入（pending 状态），false 表示正常处理
+func (c *Client) handleScriptInterrupt(input string) bool {
+    // 系统命令直接放行
+    if strings.HasPrefix(input, "/") {
+        return false
+    }
+    if c.script == nil || !c.script.Running() {
+        return false
+    }
+
+    now := time.Now()
+    if c.scriptPend {
+        if now.Sub(c.pendAt) > 3*time.Second {
+            // 超时自动取消
+            c.scriptPend = false
+            fmt.Println("(中断请求超时，脚本继续运行)")
+            return false
+        }
+        // 确认中断
+        c.script.Stop()
+        if c.script.Running() {
+            fmt.Println("(中断了当前脚本)")
+        }
+        c.script = nil
+        c.scriptPend = false
+        fmt.Println("(脚本已中断)")
+        return true
+    }
+
+    // 首次输入：进入 pending
+    c.scriptPend = true
+    c.pendAt = now
+    fmt.Println("(脚本运行中，确认中断?)")
+    return true
 }
 
 // 从管道读取命令并发送到服务器
