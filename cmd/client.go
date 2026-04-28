@@ -224,7 +224,7 @@ func (c *Client) doSystemCmd(input string) {
 				return nil
 			})
 			if val != "" {
-				fmt.Printf("/alias %s %s\n", key, val)
+				fmt.Printf("/alias %s %s\n", name, val)
 			} else {
 				fmt.Println("别名不存在:", name)
 			}

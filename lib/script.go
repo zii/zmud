@@ -803,6 +803,44 @@ func (s *Script) executeCmd(cmd string) {
 	}
 }
 
+// splitArgs 分割带引号的参数字符串
+// 支持单引号和双引号，引号内空格视为参数一部分，返回剥离引号后的参数列表
+// 例如：`a b "c d" 'e f'` → ["a", "b", "c d", "e f"]
+func splitArgs(s string) []string {
+	var parts []string
+	var buf strings.Builder
+	inQuote := false
+	var quoteChar byte
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		// 进入引号
+		if !inQuote && (ch == '"' || ch == '\'') {
+			inQuote = true
+			quoteChar = ch
+			continue
+		}
+		// 退出引号
+		if inQuote && ch == quoteChar {
+			inQuote = false
+			continue
+		}
+		// 空格分隔（仅在非引号内）
+		if ch == ' ' && !inQuote {
+			if buf.Len() > 0 {
+				parts = append(parts, buf.String())
+				buf.Reset()
+			}
+			continue
+		}
+		buf.WriteByte(ch)
+	}
+	if buf.Len() > 0 {
+		parts = append(parts, buf.String())
+	}
+	return parts
+}
+
 // ExpandAlias 查找并展开别名，替换 $A1-$A9 位置参数
 // 取 cmd 第一个空格前的单词作为别名名称，剩余部分按空格拆分为参数
 // 返回展开后的字符串和是否找到别名
@@ -819,7 +857,7 @@ func ExpandAlias(aliases map[string]string, cmd string) (string, bool) {
 	if !ok {
 		return cmd, false
 	}
-	argParts := strings.Fields(args)
+	argParts := splitArgs(args)
 	result := template
 	for i := 9; i >= 1; i-- {
 		key := fmt.Sprintf("$A%d", i)
