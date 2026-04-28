@@ -428,22 +428,30 @@ func (c *Client) readInput() {
 			break
 		}
 		input = strings.TrimSpace(input)
-		// === 中断确认逻辑（仅用户手动输入）===
-		if c.script != nil && c.script.Running() {
-			now := time.Now()
-			if c.scriptPend && now.Sub(c.pendAt) > 3*time.Second {
-				c.scriptPend = false
-			}
-			if c.scriptPend {
-				c.script.Stop()
-				c.script = nil
-				c.scriptPend = false
-				fmt.Println("(中断了当前脚本)")
-			} else {
-				c.scriptPend = true
-				c.pendAt = now
-				fmt.Println("(脚本运行中，确认中断?)")
-				continue
+		// === 中断确认逻辑（仅非系统命令）===
+		if !strings.HasPrefix(input, "/") {
+			if c.script != nil && c.script.Running() {
+				now := time.Now()
+				if c.scriptPend {
+					if now.Sub(c.pendAt) > 3*time.Second {
+						c.scriptPend = false
+						fmt.Println("(中断请求超时，脚本继续运行)")
+					} else {
+						c.script.Stop()
+						if c.script.Running() {
+							fmt.Println("(中断了当前脚本)")
+						}
+						c.script = nil
+						c.scriptPend = false
+						fmt.Println("(脚本已中断)")
+						continue
+					}
+				} else {
+					c.scriptPend = true
+					c.pendAt = now
+					fmt.Println("(脚本运行中，确认中断?)")
+					continue
+				}
 			}
 		}
 		// === 中断确认逻辑结束 ===
