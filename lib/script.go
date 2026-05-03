@@ -173,7 +173,18 @@ func (s *Script) processCmds(cmds []string) {
 							}
 							continue // 等待成功，继续后续 actions
 						}
-						if n, err := strconv.Atoi(act); err == nil {
+						// 相对跳转：+N 往后 N 步，-N 往前 N 步（如 -2 表示跳回 2 行）
+						if len(act) > 0 && (act[0] == '+' || act[0] == '-') {
+							offset, err := strconv.Atoi(act)
+							if err == nil {
+								targetIdx := i + offset
+								if targetIdx < 0 {
+									targetIdx = 0
+								}
+								i = targetIdx - 1 // -1 补偿 for 循环的 i++
+								break
+							}
+						} else if n, err := strconv.Atoi(act); err == nil {
 							if n <= 0 {
 								n = 1
 							}

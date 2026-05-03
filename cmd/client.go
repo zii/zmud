@@ -228,7 +228,7 @@ func (c *Client) doSystemCmd(input string) {
 			} else {
 				fmt.Println("别名不存在:", name)
 			}
-		} else if parts[1] == "DELETE" {
+		} else if parts[1] == "none" {
 			c.db.Update(func(tx *lmdb.Tx) error {
 				tx.Delete(key)
 				return nil
@@ -296,7 +296,7 @@ func (c *Client) doSystemCmd(input string) {
 			} else {
 				fmt.Println("触发器不存在:", pattern)
 			}
-		} else if command == "DELETE" {
+		} else if command == "none" {
 			c.db.Update(func(tx *lmdb.Tx) error {
 				tx.Delete(key)
 				return nil

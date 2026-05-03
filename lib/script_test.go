@@ -644,6 +644,48 @@ func TestRun_IfJump(t *testing.T) {
 	}
 }
 
+// #if 相对跳转：条件真 → 相对跳回 2 行
+func TestRun_IfRelativeJumpBack(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["C"] = "1"
+	defer delete(VARS, "C")
+	s := NewScript(wc, nil)
+
+	go s.Run("cmd1;#wa 1;#if $C=1 -2;sleep")
+
+	// 第1条：cmd1
+	cmd1 := <-wc
+	if cmd1 != "cmd1" {
+		t.Fatalf("第1条应为 cmd1, 实际=[%s]", cmd1)
+	}
+	// #if $C=1 -2 → 条件真 → 相对跳回2行 → 回到 cmd1
+	cmd2 := <-wc
+	if cmd2 != "cmd1" {
+		t.Fatalf("相对跳转后应为 cmd1, 实际=[%s]", cmd2)
+	}
+}
+
+// #if 相对跳转：条件假 → fallthrough
+func TestRun_IfRelativeJumpFallthrough(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["C"] = "2"
+	defer delete(VARS, "C")
+	s := NewScript(wc, nil)
+
+	go s.Run("cmd1;#wa 1;#if $C=1 -2;sleep")
+
+	// 第1条：cmd1
+	cmd1 := <-wc
+	if cmd1 != "cmd1" {
+		t.Fatalf("第1条应为 cmd1, 实际=[%s]", cmd1)
+	}
+	// $C=2, 条件假 → fallthrough 到 sleep
+	cmd2 := <-wc
+	if cmd2 != "sleep" {
+		t.Fatalf("fallthrough 后应为 sleep, 实际=[%s]", cmd2)
+	}
+}
+
 // #if 条件假 → fallthrough
 func TestRun_IfFallthrough(t *testing.T) {
 	wc := make(chan string, 10)
