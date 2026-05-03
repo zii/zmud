@@ -428,14 +428,14 @@ func (c *Client) readInput() {
 			break
 		}
 		input = strings.TrimSpace(input)
-		// 中断确认：返回 true 表示跳过此输入
-		if c.handleScriptInterrupt(input) {
-			continue
-		}
 		// 添加到历史
 		// Prompt无限循环, 完全抢占了锁, 所以AppendHistory如果放在inputLoop会永远阻塞. 造成输入后屏幕不渲染.
 		if input != "" {
 			c.liner.AppendHistory(input)
+		}
+		// 中断确认：返回 true 表示跳过此输入
+		if c.handleScriptInterrupt(input) {
+			continue
 		}
 		c.rc <- input
 	}
