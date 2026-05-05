@@ -38,30 +38,30 @@ type batch struct {
 
 // MUD 客户端，管理连接、输入输出和历史命令
 type Client struct {
-	conn        net.Conn          // TCP 连接，与 MUD 服务器的通信管道
-	exit        chan struct{}     // 退出信号通道，服务器断开时触发
-	once        sync.Once         // 确保退出通道只关闭一次
-	tr          *lib.Translator   // 翻译器，将服务器消息翻译为中文
-	server      *lib.Server       // 当前连接的服务器
-	ring        [10]string        // 服务器原始文本流(用于调试翻译)
-	ri          int               // 最新一条原始文本
-	mode        lib.Mode          // 显示模式: LSRC=原文, lib.LTRN=译文, LMIX=双语
-	liner       *liner.State      // 行编辑器，支持历史和编辑
-	historyFile string            // 历史记录文件路径
-	cmdHistory  map[string]int    // 命令使用次数，用于补全排序
-	muCmdHistory sync.RWMutex     // 保护 cmdHistory 并发访问
-	batchs      []*batch          // 服务器最近响应历史
-	wc          chan string       // 命令管道，后台发送goroutine从此读取
-	rc          chan string       // 读取的命令管道
-	script      *lib.Script       // 当前运行的脚本
-	db          *lmdb.DB          // 别名数据库
-	triggers    map[string]string // 触发器缓存（包括 SKIP）
-	muTrigger   sync.Mutex
-	aliases     map[string]string // 别名缓存，写操作受 muAlias 保护
-	muAlias     sync.RWMutex
-	encoder     transform.Transformer // 编码器，缓存以提升性能
-	scriptPend  bool                  // 脚本中断待确认
-	pendAt      time.Time             // pending 开始时间
+	conn         net.Conn          // TCP 连接，与 MUD 服务器的通信管道
+	exit         chan struct{}     // 退出信号通道，服务器断开时触发
+	once         sync.Once         // 确保退出通道只关闭一次
+	tr           *lib.Translator   // 翻译器，将服务器消息翻译为中文
+	server       *lib.Server       // 当前连接的服务器
+	ring         [10]string        // 服务器原始文本流(用于调试翻译)
+	ri           int               // 最新一条原始文本
+	mode         lib.Mode          // 显示模式: LSRC=原文, lib.LTRN=译文, LMIX=双语
+	liner        *liner.State      // 行编辑器，支持历史和编辑
+	historyFile  string            // 历史记录文件路径
+	cmdHistory   map[string]int    // 命令使用次数，用于补全排序
+	muCmdHistory sync.RWMutex      // 保护 cmdHistory 并发访问
+	batchs       []*batch          // 服务器最近响应历史
+	wc           chan string       // 命令管道，后台发送goroutine从此读取
+	rc           chan string       // 读取的命令管道
+	script       *lib.Script       // 当前运行的脚本
+	db           *lmdb.DB          // 别名数据库
+	triggers     map[string]string // 触发器缓存（包括 SKIP）
+	muTrigger    sync.Mutex
+	aliases      map[string]string // 别名缓存，写操作受 muAlias 保护
+	muAlias      sync.RWMutex
+	encoder      transform.Transformer // 编码器，缓存以提升性能
+	scriptPend   bool                  // 脚本中断待确认
+	pendAt       time.Time             // pending 开始时间
 }
 
 // 创建新的客户端实例，初始化所有通道和默认值
@@ -409,14 +409,14 @@ func (c *Client) send(cmd string) {
 func (c *Client) readInput() {
 	c.liner.SetCtrlCAborts(true)
 	c.liner.SetCompleter(func(line string) []string { return c.completer(line) })
-	c.liner.SetKeyBinding("f1", func(s *liner.State) {
-		if c.mode == lib.LSRC {
-			c.setMode(lib.LTRN)
-		} else {
-			c.setMode(lib.LSRC)
-		}
-	})
-	c.liner.SetKeyBinding("f2", func(s *liner.State) { c.setMode(lib.LMIX) })
+	// c.liner.SetKeyBinding("f1", func(s *liner.State) {
+	// 	if c.mode == lib.LSRC {
+	// 		c.setMode(lib.LTRN)
+	// 	} else {
+	// 		c.setMode(lib.LSRC)
+	// 	}
+	// })
+	// c.liner.SetKeyBinding("f2", func(s *liner.State) { c.setMode(lib.LMIX) })
 
 	// 加载历史记录
 	if f, err := os.Open(c.historyFile); err == nil {
