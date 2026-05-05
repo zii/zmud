@@ -500,7 +500,7 @@ func tryArithmetic(cmd string, start int, val string) (string, int) {
 		return val, start
 	}
 	op := cmd[start]
-	if op != '+' && op != '-' && op != '*' && op != '/' {
+	if op != '+' && op != '-' && op != '*' && op != '/' && op != '%' {
 		return val, start
 	}
 	// 读取运算符后的数字（支持小数）
@@ -531,6 +531,11 @@ func tryArithmetic(cmd string, start int, val string) (string, int) {
 			return val, start
 		}
 		result = varVal / operand
+	case '%':
+		if operand == 0 {
+			return val, start
+		}
+		result = float64(int(varVal) % int(operand))
 	}
 	return strconv.Itoa(int(result)), j
 }
@@ -555,7 +560,7 @@ func isDigit(b byte) bool {
 func findActionSplitPos(expanded string) int {
 	// 找到最后一个运算符（优先级从高到低）
 	var opIdx, opLen int
-	for _, candidate := range []string{">=", "<=", "!=", "=", ">", "<"} {
+	for _, candidate := range []string{">=", "<=", "!=", "==", "=", ">", "<"} {
 		if idx := strings.Index(expanded, candidate); idx >= 0 && idx > opIdx {
 			opIdx = idx
 			opLen = len(candidate)
@@ -581,7 +586,7 @@ func findActionSplitPos(expanded string) int {
 // 解析并计算比较表达式，如 "250>100" 返回 true
 func evalCompare(expr string) bool {
 	// 先尝试双字符运算符 >=, <=, !=
-	for _, op := range []string{">=", "<=", "!="} {
+	for _, op := range []string{">=", "<=", "!=", "=="} {
 		if parts := strings.SplitN(expr, op, 2); len(parts) == 2 {
 			left := strings.TrimSpace(parts[0])
 			right := strings.TrimSpace(parts[1])
@@ -618,10 +623,12 @@ func evalCompare(expr string) bool {
 					return l <= r
 				case "!=":
 					return l != r
+				case "==":
+					return l == r
 				}
 			} else if err1 != nil && err2 != nil {
 				// 两边都不是数字且是 = 或!= → 字符串比较（带 trim）
-				if op == "=" || op == "!=" {
+				if op == "=" || op == "!=" || op == "==" {
 					return compareStrings(strings.TrimSpace(left), strings.TrimSpace(right), op)
 				}
 				// > < <= >= 对非数字仍 fallback 到数字比较 (0)
@@ -711,6 +718,8 @@ func compareStrings(left, right, op string) bool {
 		return left == right
 	case "!=":
 		return left != right
+	case "==":
+		return left == right
 	}
 	return false
 }

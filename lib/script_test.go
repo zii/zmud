@@ -126,6 +126,8 @@ func TestSubst_Arithmetic(t *testing.T) {
 		{"$hp/5", "40"},
 		{"$hp*0.8", "160"},
 		{"$1+10.5", "110"},
+		{"$1%3", "1"},
+		{"$hp%30", "20"},
 	}
 	for _, tt := range tests {
 		got := s.subst(tt.input)
@@ -695,6 +697,9 @@ func TestEvalCompare(t *testing.T) {
 		{"5=6", false},
 		{"5!=6", true},
 		{"5!=5", false},
+		{"5==5", true},
+		{"5==6", false},
+		{"0==7", false},
 		{"100>100", false},
 		{"abc>5", false},   // 非法左值 → 0>5
 		{"5>xyz", true},    // 非法右值 → 5>0
@@ -1408,5 +1413,80 @@ func TestRun_IfMultiAction_WithWa(t *testing.T) {
 	// 验证确实等待了约 1.5 秒（容差 ±200ms）
 	if elapsed < 1300*time.Millisecond || elapsed > 1700*time.Millisecond {
 		t.Fatalf("等待时间异常: %v (期望 ~1.5s)", elapsed)
+	}
+}
+
+// #if 求余数运算（真条件）
+func TestRun_IfModulo(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["n"] = "10"
+	defer delete(VARS, "n")
+
+	s := NewScript(wc, nil)
+
+	// $n%5=0 即 10%5=0 → 真 → 执行 say ok
+	go s.Run("#if $n%5=0 say ok;sleep")
+
+	cmd1 := <-wc
+	if cmd1 != "say ok" {
+		t.Fatalf("应为 say ok, 实际=[%s]", cmd1)
+	}
+	cmd2 := <-wc
+	if cmd2 != "sleep" {
+		t.Fatalf("应为 sleep, 实际=[%s]", cmd2)
+	}
+}
+
+// #if 求余数运算（假条件）
+func TestRun_IfModuloFalse(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["n"] = "11"
+	defer delete(VARS, "n")
+
+	s := NewScript(wc, nil)
+
+	// $n%5=0 即 11%5=1 → 假 → 跳过 say ok
+	go s.Run("#if $n%5=0 say ok;sleep")
+
+	cmd := <-wc
+	if cmd != "sleep" {
+		t.Fatalf("应为 sleep, 实际=[%s]", cmd)
+	}
+}
+
+// #if 双等号（真条件）
+func TestRun_IfDoubleEq(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["n"] = "10"
+	defer delete(VARS, "n")
+
+	s := NewScript(wc, nil)
+
+	go s.Run("#if $n%5==0 say ok;sleep")
+
+	cmd1 := <-wc
+	if cmd1 != "say ok" {
+		t.Fatalf("应为 say ok, 实际=[%s]", cmd1)
+	}
+	cmd2 := <-wc
+	if cmd2 != "sleep" {
+		t.Fatalf("应为 sleep, 实际=[%s]", cmd2)
+	}
+}
+
+// #if 双等号（假条件，旧版 == 被拆成 = 导致恒真 bug）
+func TestRun_IfDoubleEqFalse(t *testing.T) {
+	wc := make(chan string, 10)
+	VARS["n"] = "6"
+	defer delete(VARS, "n")
+
+	s := NewScript(wc, nil)
+
+	// $n%6==7 即 6%6=0，==7 应为 false（旧版因 == 拆分错误恒真）
+	go s.Run("#if $n%6==7 say ok;sleep")
+
+	cmd := <-wc
+	if cmd != "sleep" {
+		t.Fatalf("应为 sleep, 实际=[%s]", cmd)
 	}
 }
