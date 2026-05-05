@@ -154,47 +154,8 @@ func (s *Script) processCmds(cmds []string) {
 				expr := strings.TrimSpace(expanded[:splitPos])
 				action := strings.TrimSpace(expanded[splitPos+1:])
 				if evalCompare(expr) {
-					// 支持多个 action（逗号分隔）
-					actions := strings.Split(action, ",")
-					for _, act := range actions {
-						act = strings.TrimSpace(act)
-						if act == "" {
-							continue
-						}
-						// 处理 #wa 指令作为普通命令
-						if strings.HasPrefix(act, "#wa") {
-							durStr := strings.TrimSpace(act[3:])
-							if durStr == "" {
-								continue // 无参数则跳过
-							}
-							dur := parseDuration(durStr)
-							if !s.wait(dur) {
-								return // 等待失败终止脚本
-							}
-							continue // 等待成功，继续后续 actions
-						}
-						// 相对跳转：+N 往后 N 步，-N 往前 N 步（如 -2 表示跳回 2 行）
-						if len(act) > 0 && (act[0] == '+' || act[0] == '-') {
-							offset, err := strconv.Atoi(act)
-							if err == nil {
-								targetIdx := i + offset
-								if targetIdx < 0 {
-									targetIdx = 0
-								}
-								i = targetIdx - 1 // -1 补偿 for 循环的 i++
-								break
-							}
-						} else if n, err := strconv.Atoi(act); err == nil {
-							if n <= 0 {
-								n = 1
-							}
-							i = n - 2 // 跳转到第 n 条命令 (1-based → 0-based)
-							break     // 跳转后终止后续 actions
-						} else if act == "break" {
-							return // 终止脚本
-						} else {
-							s.executeCmd(act) // 执行单条命令
-						}
+					if !s.execActions(action, &i) {
+						return
 					}
 				}
 			}
@@ -231,7 +192,9 @@ func (s *Script) processCmds(cmds []string) {
 			}
 			// 命中概率则执行实际命令，否则跳过
 			if rand.N(100) < prob {
-				s.executeCmd(match[2])
+				if !s.execActions(match[2], &i) {
+					return
+				}
 			}
 			continue
 		}
@@ -788,6 +751,48 @@ func (s *Script) sendCmd(raw string) {
 }
 
 // 执行单条命令，支持关键字等待格式 cmd:keyword 和别名展开
+// 执行逗号分隔的子命令序列，支持 #wa/跳转/break。返回 false 表示需终止脚本
+func (s *Script) execActions(acts string, i *int) bool {
+	for _, act := range strings.Split(acts, ",") {
+		act = strings.TrimSpace(act)
+		if act == "" {
+			continue
+		}
+		if strings.HasPrefix(act, "#wa") {
+			durStr := strings.TrimSpace(act[3:])
+			if durStr == "" {
+				continue
+			}
+			if !s.wait(parseDuration(durStr)) {
+				return false
+			}
+			continue
+		}
+		if len(act) > 0 && (act[0] == '+' || act[0] == '-') {
+			offset, err := strconv.Atoi(act)
+			if err == nil {
+				targetIdx := *i + offset
+				if targetIdx < 0 {
+					targetIdx = 0
+				}
+				*i = targetIdx - 1
+				break
+			}
+		} else if n, err := strconv.Atoi(act); err == nil {
+			if n <= 0 {
+				n = 1
+			}
+			*i = n - 2
+			break
+		} else if act == "break" {
+			return false
+		} else {
+			s.executeCmd(act)
+		}
+	}
+	return true
+}
+
 func (s *Script) executeCmd(cmd string) {
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" {

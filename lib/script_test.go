@@ -571,6 +571,90 @@ func TestRun_AliasPercentN(t *testing.T) {
 	}
 }
 
+// %N 多命令：逗号分隔依次执行
+func TestRun_PercentMultiCmd(t *testing.T) {
+	wc := make(chan string, 10)
+	s := NewScript(wc, nil)
+
+	// %100 = 必中，应依次执行 say 1, say 2, dazuo
+	go s.Run("%100 say 1,say 2,dazuo")
+
+	cmd1 := <-wc
+	if cmd1 != "say 1" {
+		t.Fatalf("第1条应为 say 1, 实际=[%s]", cmd1)
+	}
+	cmd2 := <-wc
+	if cmd2 != "say 2" {
+		t.Fatalf("第2条应为 say 2, 实际=[%s]", cmd2)
+	}
+	cmd3 := <-wc
+	if cmd3 != "dazuo" {
+		t.Fatalf("第3条应为 dazuo, 实际=[%s]", cmd3)
+	}
+}
+
+// %N 多命令：逗号命令中带 #wa
+func TestRun_PercentMultiCmd_WithWa(t *testing.T) {
+	wc := make(chan string, 10)
+	s := NewScript(wc, nil)
+
+	go s.Run("%100 say hi,#wa 0.1s,say there")
+
+	cmd1 := <-wc
+	if cmd1 != "say hi" {
+		t.Fatalf("第1条应为 say hi, 实际=[%s]", cmd1)
+	}
+	cmd2 := <-wc
+	if cmd2 != "say there" {
+		t.Fatalf("等待后应为 say there, 实际=[%s]", cmd2)
+	}
+}
+
+// %N 多命令：break 终止后续
+func TestRun_PercentMultiCmd_BreakEarly(t *testing.T) {
+	wc := make(chan string, 10)
+	s := NewScript(wc, nil)
+
+	go s.Run("%100 say ok,break,sleep")
+
+	cmd1 := <-wc
+	if cmd1 != "say ok" {
+		t.Fatalf("第1条应为 say ok, 实际=[%s]", cmd1)
+	}
+	select {
+	case cmd := <-wc:
+		t.Fatalf("break 后不应有命令，实际=[%s]", cmd)
+	default:
+	}
+}
+
+// %N 多命令：未命中时不执行任何命令
+func TestRun_PercentMultiCmd_NotTriggered(t *testing.T) {
+	wc := make(chan string, 10)
+	s := NewScript(wc, nil)
+
+	go s.Run("%0 say 1,say 2;say done")
+
+	// %0 不命中，跳过，直接执行后面的 say done
+	cmd := <-wc
+	if cmd != "say done" {
+		t.Fatalf("应为 say done, 实际=[%s]", cmd)
+	}
+}
+
+// %N 单命令向后兼容
+func TestRun_PercentSingleCmd_BackwardCompatible(t *testing.T) {
+	wc := make(chan string, 10)
+	s := NewScript(wc, nil)
+
+	go s.Run("%100 say hello")
+
+	cmd := <-wc
+	if cmd != "say hello" {
+		t.Fatalf("应为 say hello, 实际=[%s]", cmd)
+	}
+}
+
 // aliases: #N 别名展开
 func TestRun_AliasRepeatN(t *testing.T) {
 	wc := make(chan string, 10)

@@ -49,6 +49,7 @@ type Client struct {
 	liner       *liner.State      // 行编辑器，支持历史和编辑
 	historyFile string            // 历史记录文件路径
 	cmdHistory  map[string]int    // 命令使用次数，用于补全排序
+	muCmdHistory sync.RWMutex     // 保护 cmdHistory 并发访问
 	batchs      []*batch          // 服务器最近响应历史
 	wc          chan string       // 命令管道，后台发送goroutine从此读取
 	rc          chan string       // 读取的命令管道
@@ -360,12 +361,14 @@ func (c *Client) completer(line string) []string {
 		cmd   string
 		count int
 	}
+	c.muCmdHistory.RLock()
 	var pairs []pair
 	for cmd, count := range c.cmdHistory {
 		if strings.HasPrefix(cmd, line) {
 			pairs = append(pairs, pair{cmd, count})
 		}
 	}
+	c.muCmdHistory.RUnlock()
 	// 按使用次数降序排序（稳定排序：次数相同保持插入顺序）
 	sort.Slice(pairs, func(i, j int) bool {
 		return pairs[i].count > pairs[j].count
@@ -419,6 +422,15 @@ func (c *Client) readInput() {
 	if f, err := os.Open(c.historyFile); err == nil {
 		c.liner.ReadHistory(f)
 		f.Close()
+		// 同时加载到 cmdHistory 供补全使用
+		if raw, err := os.ReadFile(c.historyFile); err == nil {
+			for _, line := range strings.Split(string(raw), "\n") {
+				line = strings.TrimSpace(line)
+				if len(line) > 2 {
+					c.cmdHistory[line] = 1
+				}
+			}
+		}
 	}
 
 	for c.liner != nil {
@@ -428,10 +440,12 @@ func (c *Client) readInput() {
 			break
 		}
 		input = strings.TrimSpace(input)
-		// 添加到历史
-		// Prompt无限循环, 完全抢占了锁, 所以AppendHistory如果放在inputLoop会永远阻塞. 造成输入后屏幕不渲染.
+		// 添加到 liner 历史和 cmdHistory（供补全用，与 Prompt 同 goroutine 确保时序）
 		if input != "" {
 			c.liner.AppendHistory(input)
+			c.muCmdHistory.Lock()
+			c.cmdHistory[input]++
+			c.muCmdHistory.Unlock()
 		}
 		// 中断确认：返回 true 表示跳过此输入
 		if c.handleScriptInterrupt(input) {
@@ -493,9 +507,11 @@ func (c *Client) sendLoop() {
 func (c *Client) inputLoop() {
 	for input := range c.rc {
 		// 添加到历史（过滤短命令）
+		c.muCmdHistory.Lock()
 		if len(input) > 2 {
 			c.cmdHistory[input]++
 		}
+		c.muCmdHistory.Unlock()
 		// 处理命令
 		if strings.HasPrefix(input, "/") {
 			c.doSystemCmd(input)
@@ -531,7 +547,11 @@ func (c *Client) Run() {
 	c.liner = liner.NewLiner()
 	go c.readServer()
 	go c.sendLoop()
-	go c.readInput()
+	inputDone := make(chan struct{})
+	go func() {
+		c.readInput()
+		close(inputDone)
+	}()
 	go c.inputLoop()
 
 	sig := make(chan os.Signal, 1)
@@ -542,6 +562,10 @@ func (c *Client) Run() {
 		select {
 		case <-sig:
 			c.quit()
+			select {
+			case <-inputDone:
+			case <-time.After(2 * time.Second):
+			}
 			return
 		case <-c.exit:
 			fmt.Println("\r")
