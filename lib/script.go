@@ -95,7 +95,7 @@ func (s *Script) processCmds(cmds []string) {
 		if DEBUG {
 			fmt.Printf("[script:%d] %s\n", i, cmds[i])
 		}
-		if i > 0 {
+		if i > 0 && s.gap > 0 {
 			d := s.gap / 2
 			if !s.wait(s.gap - d/2 + rand.N(d)) {
 				return
