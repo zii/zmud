@@ -22,19 +22,29 @@ func readLine() string {
 // 返回选中的服务器指针
 func chooseServer(cfg *lib.Config) *lib.Server {
 	args := os.Args[1:]
-
 	// 有参数时，直接使用参数
 	if len(args) >= 1 {
-		host, port := args[0], "8080"
-		if len(args) >= 2 {
-			port = args[1]
+		// 单个数字参数：按序号选择服务器
+		if n, err := strconv.Atoi(args[0]); err == nil {
+			if n >= 1 && n <= len(cfg.Servers) {
+				os.Args = os.Args[:1] // 清掉参数，连接失败后下次调用显示菜单
+				return &cfg.Servers[n-1]
+			}
+			// 序号超出范围，显示菜单
+			fmt.Printf("没有 %d 号服务器，可选 1-%d\n", n, len(cfg.Servers))
+			os.Args = os.Args[:1]
+		} else {
+			host, port := args[0], "8080"
+			if len(args) >= 2 {
+				port = args[1]
+			}
+			charset := ""
+			if len(args) >= 3 {
+				charset = args[2]
+			}
+			// 构造临时 Server 返回
+			return &lib.Server{Host: host, Port: port, Charset: charset}
 		}
-		charset := ""
-		if len(args) >= 3 {
-			charset = args[2]
-		}
-		// 构造临时 Server 返回
-		return &lib.Server{Host: host, Port: port, Charset: charset}
 	}
 
 	for {
