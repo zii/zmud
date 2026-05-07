@@ -48,7 +48,7 @@ type Client struct {
 	mode         lib.Mode          // 显示模式: LSRC=原文, lib.LTRN=译文, LMIX=双语
 	liner        *liner.State      // 行编辑器，支持历史和编辑
 	historyFile  string            // 历史记录文件路径
-	cmdHistory   map[string]int    // 命令使用次数，用于补全排序
+	cmdHistory   map[string]int64  // 命令最后使用时间戳（UnixNano），用于补全排序
 	muCmdHistory sync.RWMutex      // 保护 cmdHistory 并发访问
 	batchs       []*batch          // 服务器最近响应历史
 	wc           chan string       // 命令管道，后台发送goroutine从此读取
@@ -82,7 +82,7 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) (*Client, err
 		server:      server,
 		mode:        mode,
 		historyFile: f,
-		cmdHistory:  make(map[string]int),
+		cmdHistory:  make(map[string]int64),
 		wc:          make(chan string, 10),
 		rc:          make(chan string, 10),
 		db:          db,
@@ -356,22 +356,22 @@ func (c *Client) completer(line string) []string {
 			seen[cmd] = true
 		}
 	}
-	// 添加历史命令匹配，按使用次数排序
+	// 添加历史命令匹配，按最近使用排序
 	type pair struct {
 		cmd   string
-		count int
+		ts  int64
 	}
 	c.muCmdHistory.RLock()
 	var pairs []pair
-	for cmd, count := range c.cmdHistory {
+	for cmd, ts := range c.cmdHistory {
 		if strings.HasPrefix(cmd, line) {
-			pairs = append(pairs, pair{cmd, count})
+			pairs = append(pairs, pair{cmd, ts})
 		}
 	}
 	c.muCmdHistory.RUnlock()
-	// 按使用次数降序排序（稳定排序：次数相同保持插入顺序）
+	// 按时间戳降序排序（最近优先）
 	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].count > pairs[j].count
+		return pairs[i].ts > pairs[j].ts
 	})
 	for _, p := range pairs {
 		if !seen[p.cmd] {
@@ -427,7 +427,7 @@ func (c *Client) readInput() {
 			for _, line := range strings.Split(string(raw), "\n") {
 				line = strings.TrimSpace(line)
 				if len(line) > 2 {
-					c.cmdHistory[line] = 1
+					c.cmdHistory[line] = time.Now().UnixNano()
 				}
 			}
 		}
@@ -444,7 +444,7 @@ func (c *Client) readInput() {
 		if input != "" {
 			c.liner.AppendHistory(input)
 			c.muCmdHistory.Lock()
-			c.cmdHistory[input]++
+			c.cmdHistory[input] = time.Now().UnixNano()
 			c.muCmdHistory.Unlock()
 		}
 		// 中断确认：返回 true 表示跳过此输入
@@ -509,7 +509,7 @@ func (c *Client) inputLoop() {
 		// 添加到历史（过滤短命令）
 		c.muCmdHistory.Lock()
 		if len(input) > 2 {
-			c.cmdHistory[input]++
+			c.cmdHistory[input] = time.Now().UnixNano()
 		}
 		c.muCmdHistory.Unlock()
 		// 处理命令
