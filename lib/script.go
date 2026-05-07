@@ -39,6 +39,7 @@ type Script struct {
 	running bool              // 标记是否正在运行
 	aliases map[string]string // 别名快照（NewScript 时从 client 复制）
 	gap     time.Duration     // 命令之间强行停顿一下(秒)
+	loopCnt int               // #loop N 剩余循环次数（0 表示无限循环）
 }
 
 // 创建新的脚本引擎，aliases 为别名快照（内部会复制一份）
@@ -79,6 +80,7 @@ func matchRepeat(text string) (int, string) {
 // 运行脚本，解析并执行指令
 func (s *Script) Run(input string) {
 	s.running = true
+	s.loopCnt = 0
 	defer func() {
 		s.running = false
 		close(s.waitCh)
@@ -107,11 +109,20 @@ func (s *Script) processCmds(cmds []string) {
 			continue
 		}
 
-		// #loop 指令：从头重新执行（安全检查：前面 #wa 总时间需 >= 1s）
-		if cmd == "#loop" {
-			if totalWaitDuration(cmds[:i]) < time.Second {
-				fmt.Println("#loop 被拒绝: 前面 #wa 总时间需 >= 1s")
-				return
+		// #loop 指令：从头重新执行（#loop N 为循环 N 次后结束，#loop 为无限循环）
+		if strings.HasPrefix(cmd, "#loop") {
+			rest := strings.TrimSpace(cmd[5:])
+			if rest != "" {
+				n, err := strconv.Atoi(s.subst(rest))
+				if err == nil && n > 0 && s.loopCnt == 0 {
+					s.loopCnt = n
+				}
+			}
+			if s.loopCnt > 0 {
+				s.loopCnt--
+				if s.loopCnt == 0 {
+					return
+				}
 			}
 			i = -1 // 重置索引，下次循环从 0 开始
 			continue
