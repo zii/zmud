@@ -364,16 +364,18 @@ func (s *State) printedTabs(items []string) func(tabDirection) (string, error) {
 
 func (s *State) tabComplete(p []rune, line []rune, pos int) ([]rune, int, interface{}, error) {
 	if s.completer == nil {
-		return line, pos, rune(esc), nil
+		s.doBeep()
+		return line, pos, nil, nil
 	}
 	head, list, tail := s.completer(string(line), pos)
 	if len(list) <= 0 {
-		return line, pos, rune(esc), nil
+		s.doBeep()
+		return line, pos, nil, nil
 	}
 	hl := utf8.RuneCountInString(head)
 	if len(list) == 1 {
 		err := s.refresh(p, []rune(head+list[0]+tail), hl+utf8.RuneCountInString(list[0]))
-		return []rune(head + list[0] + tail), hl + utf8.RuneCountInString(list[0]), rune(esc), err
+		return []rune(head + list[0] + tail), hl + utf8.RuneCountInString(list[0]), nil, err
 	}
 
 	direction := tabForward
@@ -385,16 +387,16 @@ func (s *State) tabComplete(p []rune, line []rune, pos int) ([]rune, int, interf
 	for {
 		pick, err := tabPrinter(direction)
 		if err != nil {
-			return line, pos, rune(esc), err
+			return line, pos, nil, err
 		}
 		err = s.refresh(p, []rune(head+pick+tail), hl+utf8.RuneCountInString(pick))
 		if err != nil {
-			return line, pos, rune(esc), err
+			return line, pos, nil, err
 		}
 
 		next, err := s.readNext()
 		if err != nil {
-			return line, pos, rune(esc), err
+			return line, pos, nil, err
 		}
 		if key, ok := next.(rune); ok {
 			if key == tab {
@@ -402,7 +404,7 @@ func (s *State) tabComplete(p []rune, line []rune, pos int) ([]rune, int, interf
 				continue
 			}
 			if key == esc {
-				return line, pos, rune(esc), nil
+				return line, pos, nil, nil
 			}
 		}
 		if a, ok := next.(action); ok && a == shiftTab {
