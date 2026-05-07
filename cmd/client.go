@@ -358,7 +358,7 @@ func (c *Client) completer(line string) []string {
 	}
 	// 添加历史命令匹配，按最近使用排序
 	type pair struct {
-		cmd   string
+		cmd string
 		ts  int64
 	}
 	c.muCmdHistory.RLock()
@@ -424,10 +424,10 @@ func (c *Client) readInput() {
 		f.Close()
 		// 同时加载到 cmdHistory 供补全使用
 		if raw, err := os.ReadFile(c.historyFile); err == nil {
-			for _, line := range strings.Split(string(raw), "\n") {
+			for i, line := range strings.Split(string(raw), "\n") {
 				line = strings.TrimSpace(line)
 				if len(line) > 2 {
-					c.cmdHistory[line] = time.Now().UnixNano()
+					c.cmdHistory[line] = int64(i)
 				}
 			}
 		}
