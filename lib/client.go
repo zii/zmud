@@ -77,12 +77,7 @@ func NewClient(cfg *Config, server *Server, mode Mode) (*Client, error) {
 	dbPath := filepath.Join(home, ".zmud", server.Host+":"+server.Port+".db")
 	db, err := lmdb.Open(dbPath)
 	if err != nil {
-		// LMDB 崩溃后事务残留会导致打不开，清理后重试
-		os.RemoveAll(dbPath)
-		db, err = lmdb.Open(dbPath)
-		if err != nil {
-			return nil, fmt.Errorf("打开数据库失败 %s: %v", dbPath, err)
-		}
+		return nil, fmt.Errorf("打开数据库失败 %s: %v", dbPath, err)
 	}
 	c := &Client{
 		exit:     make(chan struct{}),
@@ -351,6 +346,7 @@ func (c *Client) doSystemCmd(input string) {
 				return nil
 			})
 			delete(c.keybinds, key)
+			c.liner.RemoveKeyBinding(key)
 			fmt.Println("按键已解绑:", key)
 		} else {
 			c.db.Update(func(tx *lmdb.Tx) error {
@@ -361,6 +357,10 @@ func (c *Client) doSystemCmd(input string) {
 				c.keybinds = make(map[string]string)
 			}
 			c.keybinds[key] = parts[1]
+			cmd := parts[1]
+			c.liner.SetKeyBinding(key, func(s *liner.State) {
+				c.send(cmd)
+			})
 			fmt.Println("按键已绑定:", key, "->", parts[1])
 		}
 	} else if input == "/quit" {
@@ -486,25 +486,6 @@ func (c *Client) readInput() {
 	c.liner.SetCompleter(func(line string) []string { return c.completer(line) })
 	// 加载按键绑定
 	c.loadKeybinds()
-	for key, cmd := range c.keybinds {
-		cmd := cmd
-		c.liner.SetKeyBinding(key, func(s *liner.State) {
-			c.send(cmd)
-		})
-	}
-	// 未绑定的功能键保留默认行为
-	if _, ok := c.keybinds["f1"]; !ok {
-		c.liner.SetKeyBinding("f1", func(s *liner.State) {
-			if c.mode == LSRC {
-				c.setMode(LTRN)
-			} else {
-				c.setMode(LSRC)
-			}
-		})
-	}
-	if _, ok := c.keybinds["f2"]; !ok {
-		c.liner.SetKeyBinding("f2", func(s *liner.State) { c.setMode(LMIX) })
-	}
 
 	// 从LMDB加载历史记录
 	c.loadHistory()
@@ -599,6 +580,7 @@ func (c *Client) inputLoop() {
 func (c *Client) Run() {
 	defer func() {
 		c.liner.Close()
+		c.db.Close()
 		if r := recover(); r != nil {
 			fmt.Printf("panic: %v\n", r)
 			debug.PrintStack()
@@ -877,6 +859,12 @@ func (c *Client) loadKeybinds() {
 		})
 		return nil
 	})
+	for key, cmd := range c.keybinds {
+		cmd := cmd
+		c.liner.SetKeyBinding(key, func(s *liner.State) {
+			c.send(cmd)
+		})
+	}
 }
 
 // 检查 SKIP 触发器，返回(原文的分行, 去除颜色的分行)
