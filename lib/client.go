@@ -22,6 +22,7 @@ import (
 	//"github.com/peterh/liner"
 	"zmud/lib/liner"
 
+	"github.com/hashicorp/golang-lru/v2"
 	"github.com/tidwall/match"
 	"golang.org/x/term"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -35,11 +36,8 @@ type batch struct {
 	ln    int // Translate后实际输出的行数
 }
 
-// cmdEntry 保存命令及其最后使用的时间戳，按时间戳降序排列
-type cmdEntry struct {
-	cmd string
-	ts  int64
-}
+// 历史命令容量上限
+const HistoryLimit = 100
 
 // MUD 客户端，管理连接、输入输出和历史命令
 type Client struct {
@@ -51,10 +49,9 @@ type Client struct {
 	ring         [10]string        // 服务器原始文本流(用于调试翻译)
 	ri           int               // 最新一条原始文本
 	mode         Mode              // 显示模式: LSRC=原文, LTRN=译文, LMIX=双语
-	liner        *liner.State      // 行编辑器，支持历史和编辑
-	cmdHistory   []cmdEntry        // 按时间戳降序排列的命令历史，用于补全排序
-	muCmdHistory sync.RWMutex      // 保护 cmdHistory 并发访问
-	batchs       []*batch          // 服务器最近响应历史
+	liner        *liner.State            // 行编辑器，支持历史和编辑
+	cmdHistory   *lru.Cache[string, int64] // 最近使用的命令历史，用于补全排序
+	batchs       []*batch                // 服务器最近响应历史
 	wc           chan string          // 命令发送管道，携带手动/脚本标记
 	rc           chan string       // 读取的命令管道
 	script       *Script           // 当前运行的脚本
@@ -88,6 +85,7 @@ func NewClient(cfg *Config, server *Server, mode Mode) (*Client, error) {
 		db:       db,
 		triggers: make(map[string]string),
 	}
+	c.cmdHistory, _ = lru.New[string, int64](HistoryLimit)
 	c.loadTriggers()
 	c.loadAliases()
 	c.encoder = c.initEncoder()
@@ -389,15 +387,12 @@ func (c *Client) setMode(n Mode) {
 // 补全函数：系统命令 + 历史命令 Tab 补全
 func (c *Client) completer(line string) []string {
 	var results []string
-
-	// 添加历史命令匹配，cmdHistory 已按时间降序排列
-	c.muCmdHistory.RLock()
-	for _, e := range c.cmdHistory {
-		if strings.HasPrefix(e.cmd, line) {
-			results = append(results, e.cmd)
+	keys := c.cmdHistory.Keys()
+	for i := len(keys) - 1; i >= 0; i-- {
+		if strings.HasPrefix(keys[i], line) {
+			results = append(results, keys[i])
 		}
 	}
-	c.muCmdHistory.RUnlock()
 	return results
 }
 
@@ -427,61 +422,47 @@ func (c *Client) send(cmd string) {
 // 从 stdin 读取输入行并发送到服务器
 // loadHistory 从 LMDB 加载历史记录到 cmdHistory 和 liner
 func (c *Client) loadHistory() {
+	type entry struct {
+		cmd string
+		ts  int64
+	}
+	var entries []entry
 	c.db.View(func(tx *lmdb.Tx) error {
 		tx.AscendKeys("hist:*", func(key, value string) bool {
 			cmd := key[5:] // 去掉 "hist:" 前缀
 			ts, _ := strconv.ParseInt(value, 10, 64)
-			c.cmdHistory = append(c.cmdHistory, cmdEntry{cmd, ts})
+			entries = append(entries, entry{cmd, ts})
 			return true
 		})
 		return nil
 	})
 	// 升序排列（最旧在前）
-	sort.Slice(c.cmdHistory, func(i, j int) bool {
-		return c.cmdHistory[i].ts < c.cmdHistory[j].ts
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].ts < entries[j].ts
 	})
 	// 超出限制时清理最旧的条目
-	if len(c.cmdHistory) > liner.HistoryLimit {
-		toDelete := len(c.cmdHistory) - liner.HistoryLimit
+	if len(entries) > HistoryLimit {
+		toDelete := len(entries) - HistoryLimit
 		c.db.Update(func(tx *lmdb.Tx) error {
-			for _, e := range c.cmdHistory[:toDelete] {
+			for _, e := range entries[:toDelete] {
 				tx.Delete("hist:" + e.cmd)
 			}
 			return nil
 		})
-		c.cmdHistory = c.cmdHistory[toDelete:]
+		entries = entries[toDelete:]
 	}
-	// 逐个添加到 liner 历史
-	for _, e := range c.cmdHistory {
+	// 逐个添加到 LRU 缓存和 liner 历史
+	for _, e := range entries {
+		c.cmdHistory.Add(e.cmd, e.ts)
 		c.liner.AppendHistory(e.cmd)
 	}
-	// 降序排列用于 completer（最近在前）
-	sort.Slice(c.cmdHistory, func(i, j int) bool {
-		return c.cmdHistory[i].ts > c.cmdHistory[j].ts
-	})
 }
 
 // saveHistory 将命令记录到 liner 历史、cmdHistory 和 LMDB
 func (c *Client) saveHistory(input string) {
 	c.liner.AppendHistory(input)
 	now := time.Now().Unix()
-	c.muCmdHistory.Lock()
-	found := false
-	for i, e := range c.cmdHistory {
-		if e.cmd == input {
-			c.cmdHistory[i].ts = now
-			found = true
-			break
-		}
-	}
-	if !found {
-		c.cmdHistory = append(c.cmdHistory, cmdEntry{input, now})
-	} else {
-		sort.Slice(c.cmdHistory, func(i, j int) bool {
-			return c.cmdHistory[i].ts > c.cmdHistory[j].ts
-		})
-	}
-	c.muCmdHistory.Unlock()
+	c.cmdHistory.Add(input, now)
 	c.db.Update(func(tx *lmdb.Tx) error {
 		tx.Set("hist:"+input, strconv.FormatInt(now, 10), nil)
 		return nil
