@@ -63,6 +63,7 @@ type Client struct {
 	muTrigger    sync.Mutex
 	aliases      map[string]string // 别名缓存，写操作受 muAlias 保护
 	muAlias      sync.RWMutex
+	keybinds     map[string]string // 按键绑定 key→命令，如 f1→perform blade.ruyi
 	encoder      transform.Transformer // 编码器，缓存以提升性能
 	scriptPend   bool                  // 脚本中断待确认
 	pendAt       time.Time             // pending 开始时间
@@ -324,6 +325,39 @@ func (c *Client) doSystemCmd(input string) {
 			fmt.Println(rev)
 			c.rc <- rev
 		}
+	} else if m, ok := strings.CutPrefix(input, "/bind "); ok {
+		parts := strings.SplitN(m, " ", 2)
+		key := parts[0]
+		if len(parts) == 1 {
+			// 查询
+			var val string
+			c.db.View(func(tx *lmdb.Tx) error {
+				val, _ = tx.Get("keybind:" + key)
+				return nil
+			})
+			if val != "" {
+				fmt.Printf("/bind %s %s\n", key, val)
+			} else {
+				fmt.Println("按键未绑定:", key)
+			}
+		} else if parts[1] == "none" {
+			c.db.Update(func(tx *lmdb.Tx) error {
+				tx.Delete("keybind:" + key)
+				return nil
+			})
+			delete(c.keybinds, key)
+			fmt.Println("按键已解绑:", key)
+		} else {
+			c.db.Update(func(tx *lmdb.Tx) error {
+				tx.Set("keybind:"+key, parts[1], nil)
+				return nil
+			})
+			if c.keybinds == nil {
+				c.keybinds = make(map[string]string)
+			}
+			c.keybinds[key] = parts[1]
+			fmt.Println("按键已绑定:", key, "->", parts[1])
+		}
 	} else if input == "/quit" {
 		fmt.Println("退出游戏")
 		c.quit()
@@ -445,14 +479,27 @@ func (c *Client) saveHistory(input string) {
 func (c *Client) readInput() {
 	c.liner.SetCtrlCAborts(true)
 	c.liner.SetCompleter(func(line string) []string { return c.completer(line) })
-	c.liner.SetKeyBinding("f1", func(s *liner.State) {
-		if c.mode == LSRC {
-			c.setMode(LTRN)
-		} else {
-			c.setMode(LSRC)
-		}
-	})
-	c.liner.SetKeyBinding("f2", func(s *liner.State) { c.setMode(LMIX) })
+	// 加载按键绑定
+	c.loadKeybinds()
+	for key, cmd := range c.keybinds {
+		cmd := cmd
+		c.liner.SetKeyBinding(key, func(s *liner.State) {
+			c.send(cmd)
+		})
+	}
+	// 未绑定的功能键保留默认行为
+	if _, ok := c.keybinds["f1"]; !ok {
+		c.liner.SetKeyBinding("f1", func(s *liner.State) {
+			if c.mode == LSRC {
+				c.setMode(LTRN)
+			} else {
+				c.setMode(LSRC)
+			}
+		})
+	}
+	if _, ok := c.keybinds["f2"]; !ok {
+		c.liner.SetKeyBinding("f2", func(s *liner.State) { c.setMode(LMIX) })
+	}
 
 	// 从LMDB加载历史记录
 	c.loadHistory()
@@ -806,6 +853,21 @@ func (c *Client) loadAliases() {
 	c.db.View(func(tx *lmdb.Tx) error {
 		tx.AscendKeys("alias:*", func(key, command string) bool {
 			c.aliases[key[6:]] = command
+			return true
+		})
+		return nil
+	})
+}
+
+// loadKeybinds 从 LMDB 加载按键绑定到内存
+func (c *Client) loadKeybinds() {
+	if c.db == nil {
+		return
+	}
+	c.keybinds = make(map[string]string)
+	c.db.View(func(tx *lmdb.Tx) error {
+		tx.AscendKeys("keybind:*", func(key, command string) bool {
+			c.keybinds[key[8:]] = command
 			return true
 		})
 		return nil

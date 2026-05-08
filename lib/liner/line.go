@@ -1065,6 +1065,78 @@ mainLoop:
 						break
 					}
 				}
+			case f4:
+				if s.keyBindings != nil {
+					if handler, ok := s.keyBindings["f4"]; ok {
+						handler(s)
+						s.needRefresh = true
+						break
+					}
+				}
+			case f5:
+				if s.keyBindings != nil {
+					if handler, ok := s.keyBindings["f5"]; ok {
+						handler(s)
+						s.needRefresh = true
+						break
+					}
+				}
+			case f6:
+				if s.keyBindings != nil {
+					if handler, ok := s.keyBindings["f6"]; ok {
+						handler(s)
+						s.needRefresh = true
+						break
+					}
+				}
+			case f7:
+				if s.keyBindings != nil {
+					if handler, ok := s.keyBindings["f7"]; ok {
+						handler(s)
+						s.needRefresh = true
+						break
+					}
+				}
+			case f8:
+				if s.keyBindings != nil {
+					if handler, ok := s.keyBindings["f8"]; ok {
+						handler(s)
+						s.needRefresh = true
+						break
+					}
+				}
+			case f9:
+				if s.keyBindings != nil {
+					if handler, ok := s.keyBindings["f9"]; ok {
+						handler(s)
+						s.needRefresh = true
+						break
+					}
+				}
+			case f10:
+				if s.keyBindings != nil {
+					if handler, ok := s.keyBindings["f10"]; ok {
+						handler(s)
+						s.needRefresh = true
+						break
+					}
+				}
+			case f11:
+				if s.keyBindings != nil {
+					if handler, ok := s.keyBindings["f11"]; ok {
+						handler(s)
+						s.needRefresh = true
+						break
+					}
+				}
+			case f12:
+				if s.keyBindings != nil {
+					if handler, ok := s.keyBindings["f12"]; ok {
+						handler(s)
+						s.needRefresh = true
+						break
+					}
+				}
 			}
 			s.needRefresh = true
 		}

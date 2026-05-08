@@ -271,16 +271,6 @@ func (s *Script) wait(d time.Duration) bool {
 
 // 等待服务器返回包含关键字的文本，支持正则、通配符捕获和命名捕获
 func (s *Script) waitKeyword(keyword string) bool {
-	// 丢弃命令发送前积累的消息，避免匹配到旧响应
-Drain:
-	for {
-		select {
-		case <-s.waitCh:
-		default:
-			break Drain
-		}
-	}
-
 	timeout := time.After(s.timeout)
 	re := makePattern(keyword)
 	// 预编译 OR 子条件
@@ -840,6 +830,15 @@ func (s *Script) executeCmd(cmd string) {
 		} else {
 			s.sendCmd(cmd)
 		}
+		// 丢弃发送命令前积累的消息，避免匹配到旧响应
+		for {
+			select {
+			case <-s.waitCh:
+			default:
+				goto afterDrain
+			}
+		}
+	afterDrain:
 		if !s.waitKeyword(keyword) {
 			return
 		}
