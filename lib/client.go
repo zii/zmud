@@ -41,9 +41,6 @@ type cmdEntry struct {
 	ts  int64
 }
 
-// Out 表示发送到服务器的命令，区分手动输入和脚本自动输入
-type Out string // 发送到服务器的命令文本
-
 // MUD 客户端，管理连接、输入输出和历史命令
 type Client struct {
 	conn         net.Conn          // TCP 连接，与 MUD 服务器的通信管道
@@ -58,7 +55,7 @@ type Client struct {
 	cmdHistory   []cmdEntry        // 按时间戳降序排列的命令历史，用于补全排序
 	muCmdHistory sync.RWMutex      // 保护 cmdHistory 并发访问
 	batchs       []*batch          // 服务器最近响应历史
-	wc           chan Out          // 命令发送管道，携带手动/脚本标记
+	wc           chan string          // 命令发送管道，携带手动/脚本标记
 	rc           chan string       // 读取的命令管道
 	script       *Script           // 当前运行的脚本
 	db           *lmdb.DB          // 别名数据库
@@ -86,7 +83,7 @@ func NewClient(cfg *Config, server *Server, mode Mode) (*Client, error) {
 		tr:       NewTranslator(cfg),
 		server:   server,
 		mode:     mode,
-		wc:       make(chan Out, 10),
+		wc:       make(chan string, 10),
 		rc:       make(chan string, 10),
 		db:       db,
 		triggers: make(map[string]string),
@@ -359,24 +356,24 @@ func (c *Client) completer(line string) []string {
 }
 
 // 发送单命令到服务器（实际写入）
-func (c *Client) sendImpl(o Out) {
+func (c *Client) sendImpl(cmd string) {
 	if c.conn == nil {
 		return
 	}
 	if c.encoder != nil {
-		out, _, err := transform.Bytes(c.encoder, []byte(string(o)+"\r\n"))
+		out, _, err := transform.Bytes(c.encoder, []byte(cmd+"\r\n"))
 		if err == nil {
 			c.conn.Write(out)
 			return
 		}
 	}
-	fmt.Fprint(c.conn, string(o), "\r\n")
+	fmt.Fprint(c.conn, cmd, "\r\n")
 }
 
 // 发送命令到管道，由后台goroutine实际发送
 func (c *Client) send(cmd string) {
 	select {
-	case c.wc <- Out(cmd):
+	case c.wc <- cmd:
 	case <-c.exit:
 	}
 }

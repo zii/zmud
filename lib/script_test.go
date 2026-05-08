@@ -157,7 +157,7 @@ func TestSubst_MissingVarNoArithmetic(t *testing.T) {
 
 // waitKeyword 集成测试
 func TestWaitKeyword_GlobCapture(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	// 启动 waitKeyword 协程
@@ -182,7 +182,7 @@ func TestWaitKeyword_GlobCapture(t *testing.T) {
 }
 
 func TestWaitKeyword_NamedCapture(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	done := make(chan bool)
@@ -201,7 +201,7 @@ func TestWaitKeyword_NamedCapture(t *testing.T) {
 }
 
 func TestWaitKeyword_PlainText(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	done := make(chan bool)
@@ -217,7 +217,7 @@ func TestWaitKeyword_PlainText(t *testing.T) {
 }
 
 func TestWaitKeyword_Regex(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	done := make(chan bool)
@@ -237,7 +237,7 @@ func TestWaitKeyword_Regex(t *testing.T) {
 
 // Script.Run 完整集成测试
 func TestRun_GlobCaptureAndSubst(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	// 在另一个协程中运行
@@ -260,7 +260,7 @@ func TestRun_GlobCaptureAndSubst(t *testing.T) {
 }
 
 func TestRun_NamedCaptureAndSubst(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	go s.Run("hp:气血{hp}/*;dazuo $hp")
@@ -279,7 +279,7 @@ func TestRun_NamedCaptureAndSubst(t *testing.T) {
 }
 
 func TestRun_ArithmeticSubst(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	go s.Run("hp:气血{hp}/*;dazuo $hp-20")
@@ -298,7 +298,7 @@ func TestRun_ArithmeticSubst(t *testing.T) {
 }
 
 func TestRun_PlainTextBackwardCompat(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	go s.Run("sleep:醒来;drink")
@@ -351,7 +351,7 @@ func TestContainsRegexMeta(t *testing.T) {
 }
 
 func TestRun_GlobCaptureMultipleSlash(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	go s.Run("hp:气血】*/*;say $1")
@@ -460,7 +460,7 @@ func TestMakePattern_UnclosedBrace(t *testing.T) {
 
 // aliases: 普通命令别名展开
 func TestRun_AliasBasic(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	aliases := map[string]string{"chihe": "hp:气血{hp}/*;drink"}
 	s := NewScript(wc, aliases)
 
@@ -491,7 +491,7 @@ func TestRun_AliasBasic(t *testing.T) {
 
 // aliases: cmd:keyword 别名展开
 func TestRun_AliasCmdKeyword(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	aliases := map[string]string{"chihe": "hp:气血{hp}/*;drink"}
 	s := NewScript(wc, aliases)
 
@@ -522,7 +522,7 @@ func TestRun_AliasCmdKeyword(t *testing.T) {
 
 // aliases: 别名展开 + #jmp 索引不变
 func TestRun_AliasJmpPreserved(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	aliases := map[string]string{"chihe": "hp:气血{hp}/*;drink"}
 	s := NewScript(wc, aliases)
 
@@ -556,7 +556,7 @@ func TestRun_AliasJmpPreserved(t *testing.T) {
 
 // aliases: %N 别名展开
 func TestRun_AliasPercentN(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	aliases := map[string]string{"chihe": "drink"}
 	s := NewScript(wc, aliases)
 
@@ -575,7 +575,7 @@ func TestRun_AliasPercentN(t *testing.T) {
 
 // %N 多命令：逗号分隔依次执行
 func TestRun_PercentMultiCmd(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	// %100 = 必中，应依次执行 say 1, say 2, dazuo
@@ -597,7 +597,7 @@ func TestRun_PercentMultiCmd(t *testing.T) {
 
 // %N 多命令：逗号命令中带 #wa
 func TestRun_PercentMultiCmd_WithWa(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	go s.Run("%100 say hi,#wa 0.1s,say there")
@@ -614,7 +614,7 @@ func TestRun_PercentMultiCmd_WithWa(t *testing.T) {
 
 // %N 多命令：break 终止后续
 func TestRun_PercentMultiCmd_BreakEarly(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	go s.Run("%100 say ok,break,sleep")
@@ -632,7 +632,7 @@ func TestRun_PercentMultiCmd_BreakEarly(t *testing.T) {
 
 // %N 多命令：未命中时不执行任何命令
 func TestRun_PercentMultiCmd_NotTriggered(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	go s.Run("%0 say 1,say 2;say done")
@@ -646,7 +646,7 @@ func TestRun_PercentMultiCmd_NotTriggered(t *testing.T) {
 
 // %N 单命令向后兼容
 func TestRun_PercentSingleCmd_BackwardCompatible(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	go s.Run("%100 say hello")
@@ -659,7 +659,7 @@ func TestRun_PercentSingleCmd_BackwardCompatible(t *testing.T) {
 
 // aliases: #N 别名展开
 func TestRun_AliasRepeatN(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	aliases := map[string]string{"hello": "say hi"}
 	s := NewScript(wc, aliases)
 
@@ -715,7 +715,7 @@ func TestEvalCompare(t *testing.T) {
 
 // #if 条件真 → 跳转
 func TestRun_IfJump(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["nl"] = "150"
 	defer delete(VARS, "nl")
 	s := NewScript(wc, nil)
@@ -735,7 +735,7 @@ func TestRun_IfJump(t *testing.T) {
 
 // #if 相对跳转：条件真 → 相对跳回 2 行
 func TestRun_IfRelativeJumpBack(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["C"] = "1"
 	defer delete(VARS, "C")
 	s := NewScript(wc, nil)
@@ -756,7 +756,7 @@ func TestRun_IfRelativeJumpBack(t *testing.T) {
 
 // #if 相对跳转：条件假 → fallthrough
 func TestRun_IfRelativeJumpFallthrough(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["C"] = "2"
 	defer delete(VARS, "C")
 	s := NewScript(wc, nil)
@@ -777,7 +777,7 @@ func TestRun_IfRelativeJumpFallthrough(t *testing.T) {
 
 // #if 条件假 → fallthrough
 func TestRun_IfFallthrough(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["nl"] = "50"
 	defer delete(VARS, "nl")
 	s := NewScript(wc, nil)
@@ -797,7 +797,7 @@ func TestRun_IfFallthrough(t *testing.T) {
 
 // #if 条件真 → 执行命令（单命令）
 func TestRun_IfExecCmd(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["nl"] = "150"
 	defer delete(VARS, "nl")
 	s := NewScript(wc, nil)
@@ -822,7 +822,7 @@ func TestRun_IfExecCmd(t *testing.T) {
 
 // #if 条件真 → 执行多词命令
 func TestRun_IfExecMultiWord(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["js"] = "200"
 	defer delete(VARS, "js")
 	s := NewScript(wc, nil)
@@ -842,7 +842,7 @@ func TestRun_IfExecMultiWord(t *testing.T) {
 
 // #if 执行带关键字的命令
 func TestRun_IfExecCmdWithKeyword(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["nl"] = "150"
 	defer delete(VARS, "nl")
 	s := NewScript(wc, nil)
@@ -977,7 +977,7 @@ func TestMakePattern_OrNoPipe(t *testing.T) {
 
 // waitKeyword OR 集成测试
 func TestWaitKeyword_OrMatchFirst(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	done := make(chan bool)
@@ -996,7 +996,7 @@ func TestWaitKeyword_OrMatchFirst(t *testing.T) {
 }
 
 func TestWaitKeyword_OrMatchSecond(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	done := make(chan bool)
@@ -1015,7 +1015,7 @@ func TestWaitKeyword_OrMatchSecond(t *testing.T) {
 }
 
 func TestWaitKeyword_OrPlainText(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	done := make(chan bool)
@@ -1032,7 +1032,7 @@ func TestWaitKeyword_OrPlainText(t *testing.T) {
 
 // OR 条件编号 $C 测试
 func TestWaitKeyword_OrConditionVar(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	done := make(chan bool)
@@ -1055,7 +1055,7 @@ func TestWaitKeyword_OrConditionVar(t *testing.T) {
 
 // #if break 终止脚本
 func TestRun_IfBreak(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["nl"] = "150"
 	defer delete(VARS, "nl")
 	s := NewScript(wc, nil)
@@ -1080,7 +1080,7 @@ func TestRun_IfBreak(t *testing.T) {
 // * 作为 OR 通配符兜底测试
 // hp:#{hp},xx|* → 匹配 #{hp},xx 时走条件1，否则走条件2（*）立即结束等待
 func TestWaitKeyword_OrCatchAll(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	s := NewScript(wc, nil)
 
 	// 场景1：特定条件匹配
@@ -1135,7 +1135,7 @@ func TestWaitKeyword_OrCatchAll(t *testing.T) {
 
 // #jmp 相对位置跳转支持 +/-
 func TestRun_JmpRelative(t *testing.T) {
-	wc := make(chan Out, 20)
+	wc := make(chan string, 20)
 	s := NewScript(wc, map[string]string{})
 
 	go s.Run("e;s;n;#jmp -1;w")
@@ -1158,7 +1158,7 @@ func TestRun_JmpRelative(t *testing.T) {
 
 // #jmp +N 往右跳
 func TestRun_JmpPositiveRelative(t *testing.T) {
-	wc := make(chan Out, 20)
+	wc := make(chan string, 20)
 	s := NewScript(wc, map[string]string{})
 
 	go s.Run("e;#jmp +2;w;s;n")
@@ -1210,7 +1210,7 @@ func TestEvalCompare_String(t *testing.T) {
 
 // #if $1="东 边" 带空格的字符串比较
 func TestRun_IfStringWithSpaces(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["1"] = "东 边"
 	defer delete(VARS, "1")
 	s := NewScript(wc, nil)
@@ -1236,7 +1236,7 @@ func TestRun_IfStringWithSpaces(t *testing.T) {
 
 // #if $1="东" 不带空格的字符串比较
 func TestRun_IfStringNoSpace(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["1"] = "东"
 	defer delete(VARS, "1")
 	s := NewScript(wc, nil)
@@ -1262,7 +1262,7 @@ func TestRun_IfStringNoSpace(t *testing.T) {
 
 // #if 多 action：条件真时依次执行多个命令
 func TestRun_IfMultiAction(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["nl"] = "150"
 	defer delete(VARS, "nl")
 
@@ -1289,7 +1289,7 @@ func TestRun_IfMultiAction(t *testing.T) {
 
 // #if 多 action：遇到跳转数字立即终止后续
 func TestRun_IfMultiAction_JumpEarly(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["nl"] = "150"
 	defer delete(VARS, "nl")
 
@@ -1323,7 +1323,7 @@ func TestRun_IfMultiAction_JumpEarly(t *testing.T) {
 
 // #if 多 action：break 终止后续
 func TestRun_IfMultiAction_BreakEarly(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["nl"] = "150"
 	defer delete(VARS, "nl")
 
@@ -1348,7 +1348,7 @@ func TestRun_IfMultiAction_BreakEarly(t *testing.T) {
 
 // #if 多 action：条件假时不动任何命令
 func TestRun_IfMultiAction_False(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["nl"] = "50"
 	defer delete(VARS, "nl")
 
@@ -1368,7 +1368,7 @@ func TestRun_IfMultiAction_False(t *testing.T) {
 
 // #if 单 action 向后兼容性：原始行为保持不变
 func TestRun_IfSingleAction_BackwardCompatible(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["nl"] = "150"
 	defer delete(VARS, "nl")
 
@@ -1397,7 +1397,7 @@ func TestRun_IfSingleAction_BackwardCompatible(t *testing.T) {
 
 // #if 多 action：#wa 作为普通命令等待后执行后续
 func TestRun_IfMultiAction_WithWa(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["1"] = "东"
 	defer delete(VARS, "1")
 
@@ -1421,7 +1421,7 @@ func TestRun_IfMultiAction_WithWa(t *testing.T) {
 
 // #if 求余数运算（真条件）
 func TestRun_IfModulo(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["n"] = "10"
 	defer delete(VARS, "n")
 
@@ -1442,7 +1442,7 @@ func TestRun_IfModulo(t *testing.T) {
 
 // #if 求余数运算（假条件）
 func TestRun_IfModuloFalse(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["n"] = "11"
 	defer delete(VARS, "n")
 
@@ -1459,7 +1459,7 @@ func TestRun_IfModuloFalse(t *testing.T) {
 
 // #if 双等号（真条件）
 func TestRun_IfDoubleEq(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["n"] = "10"
 	defer delete(VARS, "n")
 
@@ -1479,7 +1479,7 @@ func TestRun_IfDoubleEq(t *testing.T) {
 
 // #if 双等号（假条件，旧版 == 被拆成 = 导致恒真 bug）
 func TestRun_IfDoubleEqFalse(t *testing.T) {
-	wc := make(chan Out, 10)
+	wc := make(chan string, 10)
 	VARS["n"] = "6"
 	defer delete(VARS, "n")
 
