@@ -365,7 +365,7 @@ func (c *Client) doSystemCmd(input string) {
 				return nil
 			})
 			cmd := parts[1]
-			c.liner.SetKeyBinding(key[8:], func(s *liner.State) {
+			c.liner.SetKeyBinding(key, func(s *liner.State) {
 				c.rc <- cmd
 			})
 			fmt.Println("按键已绑定:", key, "->", parts[1])
