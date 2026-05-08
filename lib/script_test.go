@@ -884,6 +884,9 @@ func TestExpandAlias(t *testing.T) {
 		{"单引号空格", map[string]string{"chi": "eat $A1"}, `chi 'fish meat'`, "eat fish meat", true},
 		{"混合引号", map[string]string{"test": "a $A1 b $A2"}, `test "x y" z`, "a x y b z", true},
 		{"引号不闭合", map[string]string{"test": "cmd $A1"}, `test "abc`, `cmd abc`, true},
+		// $* 完整参数
+		{"完整参数", map[string]string{"ask": "say $*"}, "ask jian ke", "say jian ke", true},
+		{"完整参数无参", map[string]string{"hi": "say $*"}, "hi", "say ", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

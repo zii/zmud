@@ -877,8 +877,9 @@ func splitArgs(s string) []string {
 	return parts
 }
 
-// ExpandAlias 查找并展开别名，替换 $A1-$A9 位置参数
+// ExpandAlias 查找并展开别名，替换 $A1-$A9 和 $* 参数
 // 取 cmd 第一个空格前的单词作为别名名称，剩余部分按空格拆分为参数
+// $A1-$A9 对应各拆分后的参数，$* 为完整剩余参数（不拆分）
 // 返回展开后的字符串和是否找到别名
 func ExpandAlias(aliases map[string]string, cmd string) (string, bool) {
 	idx := strings.IndexByte(cmd, ' ')
@@ -905,6 +906,7 @@ func ExpandAlias(aliases map[string]string, cmd string) (string, bool) {
 			}
 		}
 	}
+	result = strings.ReplaceAll(result, "$*", args)
 	return result, true
 }
 
