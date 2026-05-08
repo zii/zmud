@@ -150,7 +150,7 @@ func main() {
 		// 使用配置中的服务器列表
 		s := chooseServer(cfg)
 
-		c, err := NewClient(cfg, s, lib.LSRC)
+		c, err := lib.NewClient(cfg, s, lib.LSRC)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			continue

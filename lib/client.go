@@ -1,4 +1,4 @@
-package main
+package lib
 
 import (
 	"fmt"
@@ -17,7 +17,6 @@ import (
 
 	"zmud/ansi"
 	"zmud/api"
-	"zmud/lib"
 	"zmud/lib/lmdb"
 
 	//"github.com/peterh/liner"
@@ -42,23 +41,28 @@ type cmdEntry struct {
 	ts  int64
 }
 
+// Out 表示发送到服务器的命令，区分手动输入和脚本自动输入
+type Out struct {
+	S     string // 命令文本
+	Typed bool   // true=手动输入, false=脚本自动
+}
 // MUD 客户端，管理连接、输入输出和历史命令
 type Client struct {
 	conn         net.Conn          // TCP 连接，与 MUD 服务器的通信管道
 	exit         chan struct{}     // 退出信号通道，服务器断开时触发
 	once         sync.Once         // 确保退出通道只关闭一次
-	tr           *lib.Translator   // 翻译器，将服务器消息翻译为中文
-	server       *lib.Server       // 当前连接的服务器
+	tr           *Translator   // 翻译器，将服务器消息翻译为中文
+	server       *Server       // 当前连接的服务器
 	ring         [10]string        // 服务器原始文本流(用于调试翻译)
 	ri           int               // 最新一条原始文本
-	mode         lib.Mode          // 显示模式: LSRC=原文, lib.LTRN=译文, LMIX=双语
+	mode         Mode          // 显示模式: LSRC=原文, LTRN=译文, LMIX=双语
 	liner        *liner.State      // 行编辑器，支持历史和编辑
 	cmdHistory   []cmdEntry        // 按时间戳降序排列的命令历史，用于补全排序
 	muCmdHistory sync.RWMutex      // 保护 cmdHistory 并发访问
 	batchs       []*batch          // 服务器最近响应历史
-	wc           chan string       // 命令管道，后台发送goroutine从此读取
+	wc           chan Out      // 命令发送管道，携带手动/脚本标记
 	rc           chan string       // 读取的命令管道
-	script       *lib.Script       // 当前运行的脚本
+	script       *Script       // 当前运行的脚本
 	db           *lmdb.DB          // 别名数据库
 	triggers     map[string]string // 触发器缓存（包括 SKIP）
 	muTrigger    sync.Mutex
@@ -72,7 +76,7 @@ type Client struct {
 // 创建新的客户端实例，初始化所有通道和默认值
 // cfg: 翻译配置，不能为 nil
 // server: 当前连接的服务器
-func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) (*Client, error) {
+func NewClient(cfg *Config, server *Server, mode Mode) (*Client, error) {
 	home, _ := os.UserHomeDir()
 	dbPath := filepath.Join(home, ".zmud", server.Host+":"+server.Port+".db")
 	db, err := lmdb.Open(dbPath)
@@ -81,10 +85,10 @@ func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) (*Client, err
 	}
 	c := &Client{
 		exit:     make(chan struct{}),
-		tr:       lib.NewTranslator(cfg),
+		tr:       NewTranslator(cfg),
 		server:   server,
 		mode:     mode,
-		wc:       make(chan string, 10),
+		wc:       make(chan Out, 10),
 		rc:       make(chan string, 10),
 		db:       db,
 		triggers: make(map[string]string),
@@ -155,7 +159,7 @@ func (c *Client) doSystemCmd(input string) {
 			c.tr.SetEngine(m)
 			fmt.Printf("更换引擎 %s 成功!\n", m)
 		case "update":
-			lib.InputEngine(c.tr.Config)
+			InputEngine(c.tr.Config)
 		default:
 			fmt.Println("切换引擎: baidu, deepseek, kilo, google")
 			fmt.Println("/e update - 更新引擎参数")
@@ -190,7 +194,7 @@ func (c *Client) doSystemCmd(input string) {
 			fmt.Printf("建议: %s\n", ans)
 		}
 	} else if m, ok := strings.CutPrefix(input, "/run "); ok {
-		c.script = lib.NewScript(c.wc, c.aliases)
+		c.script = NewScript(c.wc, c.aliases)
 		go c.script.Run(m)
 	} else if input == "/stop" {
 		if c.script != nil {
@@ -199,8 +203,8 @@ func (c *Client) doSystemCmd(input string) {
 			fmt.Println("脚本已停止")
 		}
 	} else if input == "/debug" {
-		lib.DEBUG = !lib.DEBUG
-		fmt.Printf("调试模式: %v\n", lib.DEBUG)
+		DEBUG = !DEBUG
+		fmt.Printf("调试模式: %v\n", DEBUG)
 	} else if input == "/alias" {
 		var n int
 		c.db.View(func(tx *lmdb.Tx) error {
@@ -318,7 +322,7 @@ func (c *Client) doSystemCmd(input string) {
 			fmt.Println("触发器已设置:", pattern)
 		}
 	} else if m, ok := strings.CutPrefix(input, "/back "); ok {
-		rev, err := lib.ReversePath(m)
+		rev, err := ReversePath(m)
 		if err != nil {
 			fmt.Println(err)
 		} else {
@@ -333,8 +337,8 @@ func (c *Client) doSystemCmd(input string) {
 }
 
 // 设置语言模式
-func (c *Client) setMode(n lib.Mode) {
-	newl := lib.Mode(n)
+func (c *Client) setMode(n Mode) {
+	newl := Mode(n)
 	if c.mode != newl {
 		c.mode = newl
 		c.redraw()
@@ -374,7 +378,7 @@ func (c *Client) sendImpl(cmd string) {
 // 发送命令到管道，由后台goroutine实际发送
 func (c *Client) send(cmd string) {
 	select {
-	case c.wc <- cmd:
+	case c.wc <- Out{S: cmd, Typed: true}:
 	case <-c.exit:
 	}
 }
@@ -447,13 +451,13 @@ func (c *Client) readInput() {
 	c.liner.SetCtrlCAborts(true)
 	c.liner.SetCompleter(func(line string) []string { return c.completer(line) })
 	c.liner.SetKeyBinding("f1", func(s *liner.State) {
-		if c.mode == lib.LSRC {
-			c.setMode(lib.LTRN)
+		if c.mode == LSRC {
+			c.setMode(LTRN)
 		} else {
-			c.setMode(lib.LSRC)
+			c.setMode(LSRC)
 		}
 	})
-	c.liner.SetKeyBinding("f2", func(s *liner.State) { c.setMode(lib.LMIX) })
+	c.liner.SetKeyBinding("f2", func(s *liner.State) { c.setMode(LMIX) })
 
 	// 从LMDB加载历史记录
 	c.loadHistory()
@@ -514,8 +518,8 @@ func (c *Client) handleScriptInterrupt(input string) bool {
 
 // 从管道读取命令并发送到服务器
 func (c *Client) sendLoop() {
-	for cmd := range c.wc {
-		c.sendImpl(cmd)
+	for out := range c.wc {
+		c.sendImpl(out.S)
 	}
 }
 
@@ -538,7 +542,7 @@ func (c *Client) inputLoop() {
 		if input == "" {
 			c.send("")
 		} else {
-			c.script = lib.NewScript(c.wc, c.aliases)
+			c.script = NewScript(c.wc, c.aliases)
 			go c.script.Run(input)
 		}
 	}
@@ -589,7 +593,7 @@ func (c *Client) Run() {
 func (c *Client) dontTranslate(pure string) bool {
 	if len(pure) > 0 && unicode.IsLetter(rune(pure[0])) ||
 		strings.HasPrefix(pure, "* ") || strings.HasPrefix(pure, "- ") ||
-		lib.IsEnglishDominant(pure) {
+		IsEnglishDominant(pure) {
 		return false
 	}
 	return true
@@ -597,7 +601,7 @@ func (c *Client) dontTranslate(pure string) bool {
 
 // 当服务器返回超多条帮助信息时, 逐条翻译太慢, 需要先批量翻译进行预热
 func (c *Client) warmup(lines []string) {
-	if c.mode == lib.LSRC || len(lines) <= 5 || c.tr.GetEngine() == "" {
+	if c.mode == LSRC || len(lines) <= 5 || c.tr.GetEngine() == "" {
 		return
 	}
 	var srcs []string
@@ -607,15 +611,15 @@ func (c *Client) warmup(lines []string) {
 		}
 		lang := c.mode
 		// 去掉前后的颜色码+空格, 翻译的时候再拼接上
-		_, _, _, pure := lib.StripANSI(line)
+		_, _, _, pure := StripANSI(line)
 		// 提示符不翻译
 		if strings.HasSuffix(pure, ">") && i >= len(lines)-1 {
-			lang = lib.LSRC
+			lang = LSRC
 		} else if c.dontTranslate(pure) {
-			lang = lib.LSRC
+			lang = LSRC
 		}
 
-		if lang != lib.LSRC {
+		if lang != LSRC {
 			srcs = append(srcs, pure)
 		}
 		if len(srcs) == api.MaxBatchSize {
@@ -644,25 +648,25 @@ func (c *Client) Translate(lines []string) int {
 		}
 		lang := c.mode
 		if c.tr.GetEngine() == "" {
-			lang = lib.LSRC
+			lang = LSRC
 		}
 		// 去掉前后的颜色码+空格, 翻译的时候再拼接上
-		pre, indent, suf, pure := lib.StripANSI(line)
+		pre, indent, suf, pure := StripANSI(line)
 		// 提示符不翻译
 		if strings.HasSuffix(pure, ">") && i >= len(lines)-1 {
-			lang = lib.LSRC
+			lang = LSRC
 		} else if c.dontTranslate(pure) {
-			lang = lib.LSRC
+			lang = LSRC
 		}
 		fmt.Print(pre)
 
 		// lang=LSRC/LMIX: 显示原文
-		if lang != lib.LTRN {
+		if lang != LTRN {
 			fmt.Print(indent + pure)
 		}
 
 		// 这些情况启用翻译: 字母开头, 帮助信息*/-开头, 英文超过一半
-		if lang != lib.LSRC {
+		if lang != LSRC {
 			if pre != "" {
 				preColor = pre
 			}
@@ -671,11 +675,11 @@ func (c *Client) Translate(lines []string) int {
 			}
 			s, err := c.tr.Translate(pure)
 			if err == nil {
-				// lang=lib.LTRN: 只显示译文, lang=LMIX: 双语
-				if lang == lib.LTRN {
+				// lang=LTRN: 只显示译文, lang=LMIX: 双语
+				if lang == LTRN {
 					fmt.Print(indent, s)
 				} else {
-					indent = lib.RemoveRN(indent)
+					indent = RemoveRN(indent)
 					fmt.Print("\n", indent, ansi.Straw, s, ansi.Reset, preColor)
 					outn++
 				}
@@ -717,7 +721,7 @@ func (c *Client) readServer() {
 			c.quit()
 			return
 		}
-		data := lib.FilterIAC(buf[:n])
+		data := FilterIAC(buf[:n])
 		text := string(data)
 		// 如果配置了 charset，则转换编码
 		if decoder != nil {
@@ -727,9 +731,9 @@ func (c *Client) readServer() {
 			}
 		}
 		// 服务器会返回各式各样的换行, 比如"\r\n", "\n\r", "\r\r\n\n", "\r\n\r\n", 要把\r删了统一成\n
-		text = lib.RemoveCr(text)
+		text = RemoveCr(text)
 		// 处理拼接: 如果行尾以小写字母结尾, 就暂存
-		if c.mode != lib.LSRC && !strings.HasSuffix(text, "[0m") && len(text) > 0 && unicode.IsLower(rune(text[len(text)-1])) {
+		if c.mode != LSRC && !strings.HasSuffix(text, "[0m") && len(text) > 0 && unicode.IsLower(rune(text[len(text)-1])) {
 			tmp += text
 			continue
 		}
@@ -738,12 +742,12 @@ func (c *Client) readServer() {
 		c.ri = (c.ri + 1) % len(c.ring)
 		c.ring[c.ri] = text
 		// 中文游戏不处理折行
-		if c.mode != lib.LSRC {
-			text = lib.CleanWrap(text)
+		if c.mode != LSRC {
+			text = CleanWrap(text)
 		}
 		lines, pures := c.checkSkip(text)
 		var rn int // 渲染出来的行数
-		if c.mode != lib.LSRC {
+		if c.mode != LSRC {
 			rn = c.Translate(lines)
 		} else {
 			// 中文游戏直接打印
@@ -821,7 +825,7 @@ func (c *Client) checkSkip(text string) ([]string, []string) {
 	c.muTrigger.Lock()
 	defer c.muTrigger.Unlock()
 	for _, line := range lines {
-		pure := lib.CleanColor(line)
+		pure := CleanColor(line)
 		skip := false
 		for pattern, command := range c.triggers {
 			if command == "SKIP" && match.Match(pure, pattern) {
@@ -860,7 +864,7 @@ func (c *Client) runTrigger(command string) {
 		fmt.Println("(触发器中断了当前脚本)")
 		c.script.Stop()
 	}
-	c.script = lib.NewScript(c.wc, c.aliases)
+	c.script = NewScript(c.wc, c.aliases)
 	go c.script.Run(command)
 	fmt.Printf("⚡ 触发器触发: %q\n", command)
 }

@@ -31,8 +31,9 @@ var VARS = map[string]string{}
 // 是否打印调试信息
 var DEBUG bool
 
+
 type Script struct {
-	wc      chan string       // 命令发送管道
+	wc      chan Out          // 命令发送管道
 	waitCh  chan string       // 服务器文本管道
 	stopCh  chan struct{}     // 中断信号
 	timeout time.Duration     // 命令执行超时时间
@@ -43,7 +44,7 @@ type Script struct {
 }
 
 // 创建新的脚本引擎，aliases 为别名快照（内部会复制一份）
-func NewScript(wc chan string, aliases map[string]string) *Script {
+func NewScript(wc chan Out, aliases map[string]string) *Script {
 	a := make(map[string]string, len(aliases))
 	for k, v := range aliases {
 		a[k] = v
@@ -105,7 +106,7 @@ func (s *Script) processCmds(cmds []string) {
 		}
 		cmd := strings.TrimSpace(cmds[i])
 		if cmd == "" {
-			s.wc <- s.subst(cmd)
+			s.wc <- Out{S: s.subst(cmd)}
 			continue
 		}
 
@@ -272,15 +273,6 @@ func (s *Script) wait(d time.Duration) bool {
 // 等待服务器返回包含关键字的文本，支持正则、通配符捕获和命名捕获
 func (s *Script) waitKeyword(keyword string) bool {
 	timeout := time.After(s.timeout)
-	// 丢弃已积累的消息，避免匹配到之前命令的响应
-Drain:
-	for {
-		select {
-		case <-s.waitCh:
-		default:
-			break Drain
-		}
-	}
 	re := makePattern(keyword)
 	// 预编译 OR 子条件
 	parts := splitOr(keyword)
@@ -779,7 +771,7 @@ func (s *Script) stopped() bool {
 
 // 发送命令到服务器（经过变量替换）
 func (s *Script) sendCmd(raw string) {
-	s.wc <- s.subst(raw)
+	s.wc <- Out{S: s.subst(raw)}
 }
 
 // 执行单条命令，支持关键字等待格式 cmd:keyword 和别名展开
@@ -838,6 +830,15 @@ func (s *Script) executeCmd(cmd string) {
 			s.processCmds(strings.Split(expanded, ";"))
 		} else {
 			s.sendCmd(cmd)
+		}
+		// 丢弃命令发送前积累的消息，避免匹配到旧响应
+	Drain:
+		for {
+			select {
+			case <-s.waitCh:
+			default:
+				break Drain
+			}
 		}
 		if !s.waitKeyword(keyword) {
 			return
