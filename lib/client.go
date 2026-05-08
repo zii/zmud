@@ -77,7 +77,12 @@ func NewClient(cfg *Config, server *Server, mode Mode) (*Client, error) {
 	dbPath := filepath.Join(home, ".zmud", server.Host+":"+server.Port+".db")
 	db, err := lmdb.Open(dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("打开数据库失败 %s: %v", dbPath, err)
+		// LMDB 崩溃后事务残留会导致打不开，清理后重试
+		os.RemoveAll(dbPath)
+		db, err = lmdb.Open(dbPath)
+		if err != nil {
+			return nil, fmt.Errorf("打开数据库失败 %s: %v", dbPath, err)
+		}
 	}
 	c := &Client{
 		exit:     make(chan struct{}),
