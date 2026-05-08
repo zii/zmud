@@ -63,7 +63,6 @@ type Client struct {
 	muTrigger    sync.Mutex
 	aliases      map[string]string // 别名缓存，写操作受 muAlias 保护
 	muAlias      sync.RWMutex
-	keybinds     map[string]string // 按键绑定 key→命令，如 f1→perform blade.ruyi
 	encoder      transform.Transformer // 编码器，缓存以提升性能
 	scriptPend   bool                  // 脚本中断待确认
 	pendAt       time.Time             // pending 开始时间
@@ -345,7 +344,6 @@ func (c *Client) doSystemCmd(input string) {
 				tx.Delete("keybind:" + key)
 				return nil
 			})
-			delete(c.keybinds, key)
 			c.liner.RemoveKeyBinding(key)
 			fmt.Println("按键已解绑:", key)
 		} else {
@@ -353,10 +351,6 @@ func (c *Client) doSystemCmd(input string) {
 				tx.Set("keybind:"+key, parts[1], nil)
 				return nil
 			})
-			if c.keybinds == nil {
-				c.keybinds = make(map[string]string)
-			}
-			c.keybinds[key] = parts[1]
 			cmd := parts[1]
 			c.liner.SetKeyBinding(key, func(s *liner.State) {
 				c.send(cmd)
@@ -851,20 +845,16 @@ func (c *Client) loadKeybinds() {
 	if c.db == nil {
 		return
 	}
-	c.keybinds = make(map[string]string)
 	c.db.View(func(tx *lmdb.Tx) error {
 		tx.AscendKeys("keybind:*", func(key, command string) bool {
-			c.keybinds[key[8:]] = command
+			cmd := command
+			c.liner.SetKeyBinding(key, func(s *liner.State) {
+				c.send(cmd)
+			})
 			return true
 		})
 		return nil
 	})
-	for key, cmd := range c.keybinds {
-		cmd := cmd
-		c.liner.SetKeyBinding(key, func(s *liner.State) {
-			c.send(cmd)
-		})
-	}
 }
 
 // 检查 SKIP 触发器，返回(原文的分行, 去除颜色的分行)
