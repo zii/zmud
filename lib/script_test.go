@@ -244,7 +244,7 @@ func TestRun_GlobCaptureAndSubst(t *testing.T) {
 	go s.Run("hp:气血*/*;say $1")
 
 	// 读取发送到 wc 的命令
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "hp" {
 		t.Fatalf("第1条命令应为 hp, 实际=[%s]", cmd1)
 	}
@@ -253,7 +253,7 @@ func TestRun_GlobCaptureAndSubst(t *testing.T) {
 	s.waitCh <- "气血】 230     / 230"
 
 	// 读取替换后的命令
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "say 】 230" {
 		t.Fatalf("第2条命令应为 say ] 230, 实际=[%s]", cmd2)
 	}
@@ -265,14 +265,14 @@ func TestRun_NamedCaptureAndSubst(t *testing.T) {
 
 	go s.Run("hp:气血{hp}/*;dazuo $hp")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "hp" {
 		t.Fatalf("第1条命令应为 hp, 实际=[%s]", cmd1)
 	}
 
 	s.waitCh <- "气血 100/130"
 
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "dazuo 100" {
 		t.Fatalf("第2条命令应为 dazuo 100, 实际=[%s]", cmd2)
 	}
@@ -284,14 +284,14 @@ func TestRun_ArithmeticSubst(t *testing.T) {
 
 	go s.Run("hp:气血{hp}/*;dazuo $hp-20")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "hp" {
 		t.Fatalf("第1条命令应为 hp, 实际=[%s]", cmd1)
 	}
 
 	s.waitCh <- "气血 100/130"
 
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "dazuo 80" {
 		t.Fatalf("第2条命令应为 dazuo 80, 实际=[%s]", cmd2)
 	}
@@ -303,14 +303,14 @@ func TestRun_PlainTextBackwardCompat(t *testing.T) {
 
 	go s.Run("sleep:醒来;drink")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "sleep" {
 		t.Fatalf("第1条命令应为 sleep, 实际=[%s]", cmd1)
 	}
 
 	s.waitCh <- "你睡了一觉,终于醒来"
 
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "drink" {
 		t.Fatalf("第2条命令应为 drink, 实际=[%s]", cmd2)
 	}
@@ -356,14 +356,14 @@ func TestRun_GlobCaptureMultipleSlash(t *testing.T) {
 
 	go s.Run("hp:气血】*/*;say $1")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "hp" {
 		t.Fatalf("第1条命令应为 hp, 实际=[%s]", cmd1)
 	}
 
 	s.waitCh <- "│【气血】 230     / 230      [100%]    │【内力】 486     / 251     (+   0)  │"
 
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "say 230" {
 		t.Fatalf("$1 应捕获 230 而不是冗长文本, 实际=[%s]", cmd2)
 	}
@@ -467,7 +467,7 @@ func TestRun_AliasBasic(t *testing.T) {
 	go s.Run("chihe;say done")
 
 	// chihe → hp:气血{hp}/*
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "hp" {
 		t.Fatalf("第1条命令应为 hp, 实际=[%s]", cmd1)
 	}
@@ -477,13 +477,13 @@ func TestRun_AliasBasic(t *testing.T) {
 	}
 
 	// chihe → drink
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "drink" {
 		t.Fatalf("第2条命令应为 drink, 实际=[%s]", cmd2)
 	}
 
 	// say done
-	cmd3 := (<-wc).S
+	cmd3 := string(<-wc)
 	if cmd3 != "say done" {
 		t.Fatalf("第3条命令应为 say done, 实际=[%s]", cmd3)
 	}
@@ -498,14 +498,14 @@ func TestRun_AliasCmdKeyword(t *testing.T) {
 	go s.Run("chihe:醒来;say done")
 
 	// chihe → hp:气血{hp}/*
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "hp" {
 		t.Fatalf("第1条命令应为 hp, 实际=[%s]", cmd1)
 	}
 	s.waitCh <- "气血 100/130"
 
 	// chihe → drink
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "drink" {
 		t.Fatalf("第2条命令应为 drink, 实际=[%s]", cmd2)
 	}
@@ -514,7 +514,7 @@ func TestRun_AliasCmdKeyword(t *testing.T) {
 	s.waitCh <- "你睡了一觉,终于醒来"
 
 	// say done
-	cmd3 := (<-wc).S
+	cmd3 := string(<-wc)
 	if cmd3 != "say done" {
 		t.Fatalf("第3条命令应为 say done, 实际=[%s]", cmd3)
 	}
@@ -529,26 +529,26 @@ func TestRun_AliasJmpPreserved(t *testing.T) {
 	go s.Run("chihe;dazuo 100;#jmp2")
 
 	// i=0: chihe → hp:气血{hp}/*
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "hp" {
 		t.Fatalf("第1条命令应为 hp, 实际=[%s]", cmd1)
 	}
 	s.waitCh <- "气血 100/130"
 
 	// chihe → drink
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "drink" {
 		t.Fatalf("第2条命令应为 drink, 实际=[%s]", cmd2)
 	}
 
 	// i=1: dazuo 100
-	cmd3 := (<-wc).S
+	cmd3 := string(<-wc)
 	if cmd3 != "dazuo 100" {
 		t.Fatalf("dazuo 应为 dazuo 100, 实际=[%s]", cmd3)
 	}
 
 	// #jmp2 应跳回 dazuo 100（原第2条，不是 drink）
-	cmd4 := (<-wc).S
+	cmd4 := string(<-wc)
 	if cmd4 != "dazuo 100" {
 		t.Fatalf("#jmp2 应跳到 dazuo 100, 实际=[%s]", cmd4)
 	}
@@ -563,11 +563,11 @@ func TestRun_AliasPercentN(t *testing.T) {
 	// %100 = 必然执行
 	go s.Run("%100 chihe;say done")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "drink" {
 		t.Fatalf("别名展开应为 drink, 实际=[%s]", cmd1)
 	}
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "say done" {
 		t.Fatalf("应为 say done, 实际=[%s]", cmd2)
 	}
@@ -581,15 +581,15 @@ func TestRun_PercentMultiCmd(t *testing.T) {
 	// %100 = 必中，应依次执行 say 1, say 2, dazuo
 	go s.Run("%100 say 1,say 2,dazuo")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "say 1" {
 		t.Fatalf("第1条应为 say 1, 实际=[%s]", cmd1)
 	}
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "say 2" {
 		t.Fatalf("第2条应为 say 2, 实际=[%s]", cmd2)
 	}
-	cmd3 := (<-wc).S
+	cmd3 := string(<-wc)
 	if cmd3 != "dazuo" {
 		t.Fatalf("第3条应为 dazuo, 实际=[%s]", cmd3)
 	}
@@ -602,11 +602,11 @@ func TestRun_PercentMultiCmd_WithWa(t *testing.T) {
 
 	go s.Run("%100 say hi,#wa 0.1s,say there")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "say hi" {
 		t.Fatalf("第1条应为 say hi, 实际=[%s]", cmd1)
 	}
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "say there" {
 		t.Fatalf("等待后应为 say there, 实际=[%s]", cmd2)
 	}
@@ -619,13 +619,13 @@ func TestRun_PercentMultiCmd_BreakEarly(t *testing.T) {
 
 	go s.Run("%100 say ok,break,sleep")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "say ok" {
 		t.Fatalf("第1条应为 say ok, 实际=[%s]", cmd1)
 	}
 	select {
 	case out := <-wc:
-		t.Fatalf("break 后不应有命令，实际=[%s]", out.S)
+		t.Fatalf("break 后不应有命令，实际=[%s]", string(out))
 	default:
 	}
 }
@@ -638,7 +638,7 @@ func TestRun_PercentMultiCmd_NotTriggered(t *testing.T) {
 	go s.Run("%0 say 1,say 2;say done")
 
 	// %0 不命中，跳过，直接执行后面的 say done
-	cmd := (<-wc).S
+	cmd := string(<-wc)
 	if cmd != "say done" {
 		t.Fatalf("应为 say done, 实际=[%s]", cmd)
 	}
@@ -651,7 +651,7 @@ func TestRun_PercentSingleCmd_BackwardCompatible(t *testing.T) {
 
 	go s.Run("%100 say hello")
 
-	cmd := (<-wc).S
+	cmd := string(<-wc)
 	if cmd != "say hello" {
 		t.Fatalf("应为 say hello, 实际=[%s]", cmd)
 	}
@@ -665,15 +665,15 @@ func TestRun_AliasRepeatN(t *testing.T) {
 
 	go s.Run("#2 hello;say done")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "say hi" {
 		t.Fatalf("第1次应为 say hi, 实际=[%s]", cmd1)
 	}
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "say hi" {
 		t.Fatalf("第2次应为 say hi, 实际=[%s]", cmd2)
 	}
-	cmd3 := (<-wc).S
+	cmd3 := string(<-wc)
 	if cmd3 != "say done" {
 		t.Fatalf("应为 say done, 实际=[%s]", cmd3)
 	}
@@ -722,12 +722,12 @@ func TestRun_IfJump(t *testing.T) {
 
 	go s.Run("dazuo;#if $nl>100 1;sleep")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "dazuo" {
 		t.Fatalf("第1条应为 dazuo, 实际=[%s]", cmd1)
 	}
 	// #if $nl>100 1 → 150>100 → true → 跳回命令 1
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "dazuo" {
 		t.Fatalf("跳转后应为 dazuo, 实际=[%s]", cmd2)
 	}
@@ -743,12 +743,12 @@ func TestRun_IfRelativeJumpBack(t *testing.T) {
 	go s.Run("cmd1;#wa 1;#if $C=1 -2;sleep")
 
 	// 第1条：cmd1
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "cmd1" {
 		t.Fatalf("第1条应为 cmd1, 实际=[%s]", cmd1)
 	}
 	// #if $C=1 -2 → 条件真 → 相对跳回2行 → 回到 cmd1
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "cmd1" {
 		t.Fatalf("相对跳转后应为 cmd1, 实际=[%s]", cmd2)
 	}
@@ -764,12 +764,12 @@ func TestRun_IfRelativeJumpFallthrough(t *testing.T) {
 	go s.Run("cmd1;#wa 1;#if $C=1 -2;sleep")
 
 	// 第1条：cmd1
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "cmd1" {
 		t.Fatalf("第1条应为 cmd1, 实际=[%s]", cmd1)
 	}
 	// $C=2, 条件假 → fallthrough 到 sleep
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "sleep" {
 		t.Fatalf("fallthrough 后应为 sleep, 实际=[%s]", cmd2)
 	}
@@ -784,12 +784,12 @@ func TestRun_IfFallthrough(t *testing.T) {
 
 	go s.Run("dazuo;#if $nl>100 1;sleep")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "dazuo" {
 		t.Fatalf("第1条应为 dazuo, 实际=[%s]", cmd1)
 	}
 	// #if $nl>100 1 → 50>100 → false → fallthrough
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "sleep" {
 		t.Fatalf("fallthrough 后应为 sleep, 实际=[%s]", cmd2)
 	}
@@ -804,17 +804,17 @@ func TestRun_IfExecCmd(t *testing.T) {
 
 	go s.Run("dazuo;#if $nl>100 drink;sleep")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "dazuo" {
 		t.Fatalf("第1条应为 dazuo, 实际=[%s]", cmd1)
 	}
 	// #if $nl>100 drink → 150>100 → true → executeCmd("drink")
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "drink" {
 		t.Fatalf("条件真应执行 drink, 实际=[%s]", cmd2)
 	}
 	// sleep 是 #if 后的下一条（#if 不跳转，继续往下）
-	cmd3 := (<-wc).S
+	cmd3 := string(<-wc)
 	if cmd3 != "sleep" {
 		t.Fatalf("ifeq 后应为 sleep, 实际=[%s]", cmd3)
 	}
@@ -830,11 +830,11 @@ func TestRun_IfExecMultiWord(t *testing.T) {
 	go s.Run("#if $js>100 tuna 100;sleep")
 
 	// #if $js>100 tuna 100 → 200>100 → true → executeCmd("tuna 100")
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "tuna 100" {
 		t.Fatalf("多词命令应为 tuna 100, 实际=[%s]", cmd1)
 	}
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "sleep" {
 		t.Fatalf("#if 后应为 sleep, 实际=[%s]", cmd2)
 	}
@@ -850,14 +850,14 @@ func TestRun_IfExecCmdWithKeyword(t *testing.T) {
 	go s.Run("#if $nl>100 drink:喝了;sleep")
 
 	// #if → executeCmd("drink:喝了")
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "drink" {
 		t.Fatalf("命令应为 drink, 实际=[%s]", cmd1)
 	}
 	// 等待关键字
 	s.waitCh <- "咕噜咕噜喝了一大口"
 	// 然后 sleep
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "sleep" {
 		t.Fatalf("#if 后应为 sleep, 实际=[%s]", cmd2)
 	}
@@ -1062,7 +1062,7 @@ func TestRun_IfBreak(t *testing.T) {
 
 	go s.Run("dazuo;#if $nl>100 break;sleep")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "dazuo" {
 		t.Fatalf("第1条应为 dazuo, 实际=[%s]", cmd1)
 	}
@@ -1070,7 +1070,7 @@ func TestRun_IfBreak(t *testing.T) {
 	// sleep 不应被执行
 	select {
 	case out := <-wc:
-		t.Fatalf("break 后不应有命令, 收到=[%s]", out.S)
+		t.Fatalf("break 后不应有命令, 收到=[%s]", string(out))
 	default:
 		// 没收到命令，正确
 	}
@@ -1144,7 +1144,7 @@ func TestRun_JmpRelative(t *testing.T) {
 	// #jmp -1: i=3, targetIdx = 3+(-1) = 2 (n)
 	cmds := []string{}
 	for i := 0; i < 4; i++ {
-		cmd := (<-wc).S
+		cmd := string(<-wc)
 		cmds = append(cmds, cmd)
 	}
 
@@ -1168,7 +1168,7 @@ func TestRun_JmpPositiveRelative(t *testing.T) {
 	// 跳过 w(2), 直接到 s(3), n(4)
 	cmds := []string{}
 	for i := 0; i < 3; i++ {
-		cmd := (<-wc).S
+		cmd := string(<-wc)
 		cmds = append(cmds, cmd)
 	}
 
@@ -1221,12 +1221,12 @@ func TestRun_IfStringWithSpaces(t *testing.T) {
 		done <- true
 	}()
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "say hello" {
 		t.Fatalf("第 1 条应为 say hello, 实际=[%s]", cmd1)
 	}
 
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "say ok" {
 		t.Fatalf("条件真应执行 say ok, 实际=[%s]", cmd2)
 	}
@@ -1247,12 +1247,12 @@ func TestRun_IfStringNoSpace(t *testing.T) {
 		done <- true
 	}()
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "say hi" {
 		t.Fatalf("第 1 条应为 say hi, 实际=[%s]", cmd1)
 	}
 
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "say matched" {
 		t.Fatalf("条件真应执行 say matched, 实际=[%s]", cmd2)
 	}
@@ -1271,17 +1271,17 @@ func TestRun_IfMultiAction(t *testing.T) {
 	// #if $nl>100 say 1,sleep,dazuo → 条件真，应依次执行 say 1, sleep, dazuo 后终止
 	go s.Run("#if $nl>100 say 1,sleep,dazuo")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "say 1" {
 		t.Fatalf("第1条应为 say 1, 实际=[%s]", cmd1)
 	}
 
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "sleep" {
 		t.Fatalf("第2条应为 sleep, 实际=[%s]", cmd2)
 	}
 
-	cmd3 := (<-wc).S
+	cmd3 := string(<-wc)
 	if cmd3 != "dazuo" {
 		t.Fatalf("第3条应为 dazuo, 实际=[%s]", cmd3)
 	}
@@ -1305,13 +1305,13 @@ func TestRun_IfMultiAction_JumpEarly(t *testing.T) {
 		done <- true
 	}()
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "dazuo" {
 		t.Fatalf("第1条应为 dazuo, 实际=[%s]", cmd1)
 	}
 
 	// 跳转回第1条，应再次执行 dazuo
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "dazuo" {
 		t.Fatalf("跳转后应为 dazuo, 实际=[%s]", cmd2)
 	}
@@ -1332,7 +1332,7 @@ func TestRun_IfMultiAction_BreakEarly(t *testing.T) {
 	// #if $nl>100 say ok,break,sleep → 条件真，say ok 后 break 终止
 	go s.Run("#if $nl>100 say ok,break,sleep")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "say ok" {
 		t.Fatalf("第1条应为 say ok, 实际=[%s]", cmd1)
 	}
@@ -1340,7 +1340,7 @@ func TestRun_IfMultiAction_BreakEarly(t *testing.T) {
 	// break 后不应有后续命令（非阻塞检查）
 	select {
 	case out := <-wc:
-		t.Fatalf("break 后不应有命令，实际=[%s]", out.S)
+		t.Fatalf("break 后不应有命令，实际=[%s]", string(out))
 	default:
 		// 正确：无后续命令
 	}
@@ -1360,7 +1360,7 @@ func TestRun_IfMultiAction_False(t *testing.T) {
 	// 条件假，没有命令被执行（非阻塞检查）
 	select {
 	case out := <-wc:
-		t.Fatalf("条件假不应执行命令，实际=[%s]", out.S)
+		t.Fatalf("条件假不应执行命令，实际=[%s]", string(out))
 	default:
 		// 正确：无命令输出
 	}
@@ -1377,18 +1377,18 @@ func TestRun_IfSingleAction_BackwardCompatible(t *testing.T) {
 	// 单个 action（无逗号）应正常工作
 	go s.Run("dazuo;#if $nl>100 drink;sleep")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "dazuo" {
 		t.Fatalf("第1条应为 dazuo, 实际=[%s]", cmd1)
 	}
 
 	// #if 真执行 drink
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "drink" {
 		t.Fatalf("第2条应为 drink, 实际=[%s]", cmd2)
 	}
 
-	cmd3 := (<-wc).S
+	cmd3 := string(<-wc)
 	if cmd3 != "sleep" {
 		t.Fatalf("第3条应为 sleep, 实际=[%s]", cmd3)
 	}
@@ -1407,7 +1407,7 @@ func TestRun_IfMultiAction_WithWa(t *testing.T) {
 	go s.Run("#if $1=\"东\" #wa 1.5s,say hi")
 
 	// 应等待 1.5 秒后才收到 say hi
-	cmd := (<-wc).S
+	cmd := string(<-wc)
 	elapsed := time.Since(start)
 
 	if cmd != "say hi" {
@@ -1430,11 +1430,11 @@ func TestRun_IfModulo(t *testing.T) {
 	// $n%5=0 即 10%5=0 → 真 → 执行 say ok
 	go s.Run("#if $n%5=0 say ok;sleep")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "say ok" {
 		t.Fatalf("应为 say ok, 实际=[%s]", cmd1)
 	}
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "sleep" {
 		t.Fatalf("应为 sleep, 实际=[%s]", cmd2)
 	}
@@ -1451,7 +1451,7 @@ func TestRun_IfModuloFalse(t *testing.T) {
 	// $n%5=0 即 11%5=1 → 假 → 跳过 say ok
 	go s.Run("#if $n%5=0 say ok;sleep")
 
-	cmd := (<-wc).S
+	cmd := string(<-wc)
 	if cmd != "sleep" {
 		t.Fatalf("应为 sleep, 实际=[%s]", cmd)
 	}
@@ -1467,11 +1467,11 @@ func TestRun_IfDoubleEq(t *testing.T) {
 
 	go s.Run("#if $n%5==0 say ok;sleep")
 
-	cmd1 := (<-wc).S
+	cmd1 := string(<-wc)
 	if cmd1 != "say ok" {
 		t.Fatalf("应为 say ok, 实际=[%s]", cmd1)
 	}
-	cmd2 := (<-wc).S
+	cmd2 := string(<-wc)
 	if cmd2 != "sleep" {
 		t.Fatalf("应为 sleep, 实际=[%s]", cmd2)
 	}
@@ -1488,7 +1488,7 @@ func TestRun_IfDoubleEqFalse(t *testing.T) {
 	// $n%6==7 即 6%6=0，==7 应为 false（旧版因 == 拆分错误恒真）
 	go s.Run("#if $n%6==7 say ok;sleep")
 
-	cmd := (<-wc).S
+	cmd := string(<-wc)
 	if cmd != "sleep" {
 		t.Fatalf("应为 sleep, 实际=[%s]", cmd)
 	}

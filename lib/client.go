@@ -42,27 +42,25 @@ type cmdEntry struct {
 }
 
 // Out 表示发送到服务器的命令，区分手动输入和脚本自动输入
-type Out struct {
-	S     string // 命令文本
-	Typed bool   // true=手动输入, false=脚本自动
-}
+type Out string // 发送到服务器的命令文本
+
 // MUD 客户端，管理连接、输入输出和历史命令
 type Client struct {
 	conn         net.Conn          // TCP 连接，与 MUD 服务器的通信管道
 	exit         chan struct{}     // 退出信号通道，服务器断开时触发
 	once         sync.Once         // 确保退出通道只关闭一次
-	tr           *Translator   // 翻译器，将服务器消息翻译为中文
-	server       *Server       // 当前连接的服务器
+	tr           *Translator       // 翻译器，将服务器消息翻译为中文
+	server       *Server           // 当前连接的服务器
 	ring         [10]string        // 服务器原始文本流(用于调试翻译)
 	ri           int               // 最新一条原始文本
-	mode         Mode          // 显示模式: LSRC=原文, LTRN=译文, LMIX=双语
+	mode         Mode              // 显示模式: LSRC=原文, LTRN=译文, LMIX=双语
 	liner        *liner.State      // 行编辑器，支持历史和编辑
 	cmdHistory   []cmdEntry        // 按时间戳降序排列的命令历史，用于补全排序
 	muCmdHistory sync.RWMutex      // 保护 cmdHistory 并发访问
 	batchs       []*batch          // 服务器最近响应历史
-	wc           chan Out      // 命令发送管道，携带手动/脚本标记
+	wc           chan Out          // 命令发送管道，携带手动/脚本标记
 	rc           chan string       // 读取的命令管道
-	script       *Script       // 当前运行的脚本
+	script       *Script           // 当前运行的脚本
 	db           *lmdb.DB          // 别名数据库
 	triggers     map[string]string // 触发器缓存（包括 SKIP）
 	muTrigger    sync.Mutex
@@ -361,24 +359,24 @@ func (c *Client) completer(line string) []string {
 }
 
 // 发送单命令到服务器（实际写入）
-func (c *Client) sendImpl(cmd string) {
+func (c *Client) sendImpl(o Out) {
 	if c.conn == nil {
 		return
 	}
 	if c.encoder != nil {
-		out, _, err := transform.Bytes(c.encoder, []byte(cmd+"\r\n"))
+		out, _, err := transform.Bytes(c.encoder, []byte(string(o)+"\r\n"))
 		if err == nil {
 			c.conn.Write(out)
 			return
 		}
 	}
-	fmt.Fprint(c.conn, cmd, "\r\n")
+	fmt.Fprint(c.conn, string(o), "\r\n")
 }
 
 // 发送命令到管道，由后台goroutine实际发送
 func (c *Client) send(cmd string) {
 	select {
-	case c.wc <- Out{S: cmd, Typed: true}:
+	case c.wc <- Out(cmd):
 	case <-c.exit:
 	}
 }
@@ -519,7 +517,7 @@ func (c *Client) handleScriptInterrupt(input string) bool {
 // 从管道读取命令并发送到服务器
 func (c *Client) sendLoop() {
 	for out := range c.wc {
-		c.sendImpl(out.S)
+		c.sendImpl(out)
 	}
 }
 

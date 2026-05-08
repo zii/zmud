@@ -106,7 +106,7 @@ func (s *Script) processCmds(cmds []string) {
 		}
 		cmd := strings.TrimSpace(cmds[i])
 		if cmd == "" {
-			s.wc <- Out{S: s.subst(cmd)}
+			s.wc <- Out(s.subst(cmd))
 			continue
 		}
 
@@ -771,7 +771,7 @@ func (s *Script) stopped() bool {
 
 // 发送命令到服务器（经过变量替换）
 func (s *Script) sendCmd(raw string) {
-	s.wc <- Out{S: s.subst(raw)}
+	s.wc <- Out(s.subst(raw))
 }
 
 // 执行单条命令，支持关键字等待格式 cmd:keyword 和别名展开
