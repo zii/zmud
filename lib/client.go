@@ -324,6 +324,19 @@ func (c *Client) doSystemCmd(input string) {
 			fmt.Println(rev)
 			c.rc <- rev
 		}
+	} else if input == "/bind" {
+		var n int
+		c.db.View(func(tx *lmdb.Tx) error {
+			tx.AscendKeys("keybind:*", func(key, val string) bool {
+				fmt.Printf("/bind %s %s\n", key[8:], val)
+				n++
+				return true
+			})
+			return nil
+		})
+		if n == 0 {
+			fmt.Println("暂无按键绑定")
+		}
 	} else if m, ok := strings.CutPrefix(input, "/bind "); ok {
 		parts := strings.SplitN(m, " ", 2)
 		key := parts[0]
@@ -352,8 +365,8 @@ func (c *Client) doSystemCmd(input string) {
 				return nil
 			})
 			cmd := parts[1]
-			c.liner.SetKeyBinding(key, func(s *liner.State) {
-				c.send(cmd)
+			c.liner.SetKeyBinding(key[8:], func(s *liner.State) {
+				c.rc <- cmd
 			})
 			fmt.Println("按键已绑定:", key, "->", parts[1])
 		}
@@ -848,8 +861,8 @@ func (c *Client) loadKeybinds() {
 	c.db.View(func(tx *lmdb.Tx) error {
 		tx.AscendKeys("keybind:*", func(key, command string) bool {
 			cmd := command
-			c.liner.SetKeyBinding(key, func(s *liner.State) {
-				c.send(cmd)
+			c.liner.SetKeyBinding(key[8:], func(s *liner.State) {
+				c.rc <- cmd
 			})
 			return true
 		})

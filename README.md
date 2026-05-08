@@ -200,6 +200,9 @@ chihe 100;#jmp 1   # #jmp 指向原始的 chihe
 | `/alias` | 查看别名列表 |
 | `/alias key none` | 删除别名 |
 | `/alias key value` | 设置别名 |
+| `/bind` | 查看按键绑定列表 |
+| `/bind key none` | 解绑按键 |
+| `/bind key command` | 绑定按键到命令（F1-F12），按 Fn 即时发送 |
 | `/trigger` | 查看触发器列表 |
 | `/trigger pattern none` | 删除触发器 |
 | `/trigger pattern command` | 添加触发器 |
