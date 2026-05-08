@@ -286,6 +286,9 @@ func (s *Script) waitKeyword(keyword string) bool {
 	for {
 		select {
 		case text := <-s.waitCh:
+			if DEBUG {
+				fmt.Printf("[等待] 收到: %q  关键字: %s\n", text, keyword)
+			}
 			if re != nil {
 				subs := re.FindStringSubmatch(text)
 				if subs == nil {
