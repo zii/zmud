@@ -272,6 +272,15 @@ func (s *Script) wait(d time.Duration) bool {
 // 等待服务器返回包含关键字的文本，支持正则、通配符捕获和命名捕获
 func (s *Script) waitKeyword(keyword string) bool {
 	timeout := time.After(s.timeout)
+	// 丢弃已积累的消息，避免匹配到之前命令的响应
+Drain:
+	for {
+		select {
+		case <-s.waitCh:
+		default:
+			break Drain
+		}
+	}
 	re := makePattern(keyword)
 	// 预编译 OR 子条件
 	parts := splitOr(keyword)
