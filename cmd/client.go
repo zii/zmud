@@ -36,6 +36,12 @@ type batch struct {
 	ln    int // Translate后实际输出的行数
 }
 
+// cmdEntry 保存命令及其最后使用的时间戳，按时间戳降序排列
+type cmdEntry struct {
+	cmd string
+	ts  int64
+}
+
 // MUD 客户端，管理连接、输入输出和历史命令
 type Client struct {
 	conn         net.Conn          // TCP 连接，与 MUD 服务器的通信管道
@@ -47,8 +53,7 @@ type Client struct {
 	ri           int               // 最新一条原始文本
 	mode         lib.Mode          // 显示模式: LSRC=原文, lib.LTRN=译文, LMIX=双语
 	liner        *liner.State      // 行编辑器，支持历史和编辑
-	historyFile  string            // 历史记录文件路径
-	cmdHistory   map[string]int64  // 命令最后使用时间戳（UnixNano），用于补全排序
+	cmdHistory   []cmdEntry        // 按时间戳降序排列的命令历史，用于补全排序
 	muCmdHistory sync.RWMutex      // 保护 cmdHistory 并发访问
 	batchs       []*batch          // 服务器最近响应历史
 	wc           chan string       // 命令管道，后台发送goroutine从此读取
@@ -69,24 +74,20 @@ type Client struct {
 // server: 当前连接的服务器
 func NewClient(cfg *lib.Config, server *lib.Server, mode lib.Mode) (*Client, error) {
 	home, _ := os.UserHomeDir()
-	f := filepath.Join(home, ".zmud", "history")
-	os.MkdirAll(filepath.Dir(f), 0700)
 	dbPath := filepath.Join(home, ".zmud", server.Host+":"+server.Port+".db")
 	db, err := lmdb.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败 %s: %v", dbPath, err)
 	}
 	c := &Client{
-		exit:        make(chan struct{}),
-		tr:          lib.NewTranslator(cfg),
-		server:      server,
-		mode:        mode,
-		historyFile: f,
-		cmdHistory:  make(map[string]int64),
-		wc:          make(chan string, 10),
-		rc:          make(chan string, 10),
-		db:          db,
-		triggers:    make(map[string]string),
+		exit:     make(chan struct{}),
+		tr:       lib.NewTranslator(cfg),
+		server:   server,
+		mode:     mode,
+		wc:       make(chan string, 10),
+		rc:       make(chan string, 10),
+		db:       db,
+		triggers: make(map[string]string),
 	}
 	c.loadTriggers()
 	c.loadAliases()
@@ -342,43 +343,16 @@ func (c *Client) setMode(n lib.Mode) {
 
 // 补全函数：系统命令 + 历史命令 Tab 补全
 func (c *Client) completer(line string) []string {
-	// 系统命令
-	commands := []string{
-		"/e", "/r", "/ask", "/hint", "/alias", "/trigger", "/back",
-	}
 	var results []string
-	seen := make(map[string]bool)
 
-	// 先添加系统命令匹配
-	for _, cmd := range commands {
-		if strings.HasPrefix(cmd, line) {
-			results = append(results, cmd)
-			seen[cmd] = true
-		}
-	}
-	// 添加历史命令匹配，按最近使用排序
-	type pair struct {
-		cmd string
-		ts  int64
-	}
+	// 添加历史命令匹配，cmdHistory 已按时间降序排列
 	c.muCmdHistory.RLock()
-	var pairs []pair
-	for cmd, ts := range c.cmdHistory {
-		if strings.HasPrefix(cmd, line) {
-			pairs = append(pairs, pair{cmd, ts})
+	for _, e := range c.cmdHistory {
+		if strings.HasPrefix(e.cmd, line) {
+			results = append(results, e.cmd)
 		}
 	}
 	c.muCmdHistory.RUnlock()
-	// 按时间戳降序排序（最近优先）
-	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].ts > pairs[j].ts
-	})
-	for _, p := range pairs {
-		if !seen[p.cmd] {
-			results = append(results, p.cmd)
-			seen[p.cmd] = true
-		}
-	}
 	return results
 }
 
@@ -406,32 +380,83 @@ func (c *Client) send(cmd string) {
 }
 
 // 从 stdin 读取输入行并发送到服务器
+// loadHistory 从 LMDB 加载历史记录到 cmdHistory 和 liner
+func (c *Client) loadHistory() {
+	c.db.View(func(tx *lmdb.Tx) error {
+		tx.AscendKeys("hist:*", func(key, value string) bool {
+			cmd := key[5:] // 去掉 "hist:" 前缀
+			ts, _ := strconv.ParseInt(value, 10, 64)
+			c.cmdHistory = append(c.cmdHistory, cmdEntry{cmd, ts})
+			return true
+		})
+		return nil
+	})
+	// 升序排列（最旧在前）
+	sort.Slice(c.cmdHistory, func(i, j int) bool {
+		return c.cmdHistory[i].ts < c.cmdHistory[j].ts
+	})
+	// 超出限制时清理最旧的条目
+	if len(c.cmdHistory) > liner.HistoryLimit {
+		toDelete := len(c.cmdHistory) - liner.HistoryLimit
+		c.db.Update(func(tx *lmdb.Tx) error {
+			for _, e := range c.cmdHistory[:toDelete] {
+				tx.Delete("hist:" + e.cmd)
+			}
+			return nil
+		})
+		c.cmdHistory = c.cmdHistory[toDelete:]
+	}
+	// 逐个添加到 liner 历史
+	for _, e := range c.cmdHistory {
+		c.liner.AppendHistory(e.cmd)
+	}
+	// 降序排列用于 completer（最近在前）
+	sort.Slice(c.cmdHistory, func(i, j int) bool {
+		return c.cmdHistory[i].ts > c.cmdHistory[j].ts
+	})
+}
+
+// saveHistory 将命令记录到 liner 历史、cmdHistory 和 LMDB
+func (c *Client) saveHistory(input string) {
+	c.liner.AppendHistory(input)
+	now := time.Now().Unix()
+	c.muCmdHistory.Lock()
+	found := false
+	for i, e := range c.cmdHistory {
+		if e.cmd == input {
+			c.cmdHistory[i].ts = now
+			found = true
+			break
+		}
+	}
+	if !found {
+		c.cmdHistory = append(c.cmdHistory, cmdEntry{input, now})
+	} else {
+		sort.Slice(c.cmdHistory, func(i, j int) bool {
+			return c.cmdHistory[i].ts > c.cmdHistory[j].ts
+		})
+	}
+	c.muCmdHistory.Unlock()
+	c.db.Update(func(tx *lmdb.Tx) error {
+		tx.Set("hist:"+input, strconv.FormatInt(now, 10), nil)
+		return nil
+	})
+}
+
 func (c *Client) readInput() {
 	c.liner.SetCtrlCAborts(true)
 	c.liner.SetCompleter(func(line string) []string { return c.completer(line) })
-	// c.liner.SetKeyBinding("f1", func(s *liner.State) {
-	// 	if c.mode == lib.LSRC {
-	// 		c.setMode(lib.LTRN)
-	// 	} else {
-	// 		c.setMode(lib.LSRC)
-	// 	}
-	// })
-	// c.liner.SetKeyBinding("f2", func(s *liner.State) { c.setMode(lib.LMIX) })
-
-	// 加载历史记录
-	if f, err := os.Open(c.historyFile); err == nil {
-		c.liner.ReadHistory(f)
-		f.Close()
-		// 同时加载到 cmdHistory 供补全使用
-		if raw, err := os.ReadFile(c.historyFile); err == nil {
-			for i, line := range strings.Split(string(raw), "\n") {
-				line = strings.TrimSpace(line)
-				if len(line) > 2 {
-					c.cmdHistory[line] = int64(i)
-				}
-			}
+	c.liner.SetKeyBinding("f1", func(s *liner.State) {
+		if c.mode == lib.LSRC {
+			c.setMode(lib.LTRN)
+		} else {
+			c.setMode(lib.LSRC)
 		}
-	}
+	})
+	c.liner.SetKeyBinding("f2", func(s *liner.State) { c.setMode(lib.LMIX) })
+
+	// 从LMDB加载历史记录
+	c.loadHistory()
 
 	for c.liner != nil {
 		input, err := c.liner.Prompt("❯ ")
@@ -440,12 +465,8 @@ func (c *Client) readInput() {
 			break
 		}
 		input = strings.TrimSpace(input)
-		// 添加到 liner 历史和 cmdHistory（供补全用，与 Prompt 同 goroutine 确保时序）
 		if input != "" {
-			c.liner.AppendHistory(input)
-			c.muCmdHistory.Lock()
-			c.cmdHistory[input] = time.Now().UnixNano()
-			c.muCmdHistory.Unlock()
+			c.saveHistory(input)
 		}
 		// 中断确认：返回 true 表示跳过此输入
 		if c.handleScriptInterrupt(input) {
@@ -454,11 +475,6 @@ func (c *Client) readInput() {
 		c.rc <- input
 	}
 
-	// 保存历史记录
-	if f, err := os.Create(c.historyFile); err == nil {
-		c.liner.WriteHistory(f)
-		f.Close()
-	}
 	close(c.wc) // 关闭命令管道，通知 sendLoop 退出
 	c.quit()
 }
@@ -506,12 +522,6 @@ func (c *Client) sendLoop() {
 // 处理输入循环，从 rc channel 读取并处理命令
 func (c *Client) inputLoop() {
 	for input := range c.rc {
-		// 添加到历史（过滤短命令）
-		c.muCmdHistory.Lock()
-		if len(input) > 2 {
-			c.cmdHistory[input] = time.Now().UnixNano()
-		}
-		c.muCmdHistory.Unlock()
 		// 处理命令
 		if strings.HasPrefix(input, "/") {
 			c.doSystemCmd(input)

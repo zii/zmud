@@ -150,13 +150,7 @@ func main() {
 		// 使用配置中的服务器列表
 		s := chooseServer(cfg)
 
-		// 判断语言模式：gb/gbk/big5 则用原文
-		mode := lib.LMIX
-		charset := strings.ToLower(s.Charset)
-		if charset == "gb" || charset == "gbk" || charset == "big5" {
-			mode = lib.LSRC
-		}
-		c, err := NewClient(cfg, s, mode)
+		c, err := NewClient(cfg, s, lib.LSRC)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			continue
