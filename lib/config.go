@@ -43,12 +43,19 @@ type GoogleConfig struct {
 	Proxy  string `yaml:"proxy"`   // 代理地址，如 http://127.0.0.1:7890
 }
 
+// Account 表示服务器下的一个游戏角色
+type Account struct {
+	Username string `yaml:"username"` // 角色名（游戏内账号/角色）
+	Cmd      string `yaml:"cmd"`      // 自动登录命令，可为空
+}
+
 // Server 表示一个 MUD 服务器
 type Server struct {
-	Name    string `yaml:"name"`    // 服务器显示名称
-	Host    string `yaml:"host"`    // 服务器主机地址
-	Port    string `yaml:"port"`    // 服务器端口号
-	Charset string `yaml:"charset"` // 服务器编码，如 "gb2312"，空则不处理
+	Name     string     `yaml:"name"`     // 服务器显示名称
+	Host     string     `yaml:"host"`     // 服务器主机地址
+	Port     string     `yaml:"port"`     // 服务器端口号
+	Charset  string     `yaml:"charset"`  // 服务器编码，如 "gb2312"，空则不处理
+	Accounts []*Account `yaml:"accounts"` // 该服务器下的游戏角色列表
 }
 
 // LoadConfig 从 ~/.zmud/setting.yaml 加载配置，如果文件不存在则返回默认配置

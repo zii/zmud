@@ -56,7 +56,7 @@ func chooseServer(cfg *lib.Config) *lib.Server {
 		fmt.Println("  +/- 添加删除服务器")
 
 		var choice string
-		fmt.Printf("请选择 [1-%d]: ", len(cfg.Servers))
+		fmt.Print("请选择: ")
 		if _, err := fmt.Scanln(&choice); err != nil {
 			continue
 		}
@@ -133,6 +133,91 @@ func deleteServer(cfg *lib.Config) {
 	}
 }
 
+// chooseAccount 选择或添加游戏角色
+func chooseAccount(s *lib.Server, cfg *lib.Config) *lib.Account {
+	for {
+		// 无账号时直接输入角色名
+		if len(s.Accounts) == 0 {
+			fmt.Print("请输入角色名: ")
+			name := readLine()
+			if name == "" {
+				continue
+			}
+			a := &lib.Account{Username: name}
+			fmt.Print("自动登录命令 (可选，回车跳过): ")
+			if cmd := readLine(); cmd != "" {
+				a.Cmd = cmd
+			}
+			s.Accounts = append(s.Accounts, a)
+			if err := lib.SaveConfig(cfg); err != nil {
+				fmt.Printf("保存失败：%v\n", err)
+			}
+			return a
+		}
+
+		fmt.Println("可用角色:")
+		for i, a := range s.Accounts {
+			cmd := ""
+			if a.Cmd != "" {
+				cmd = " [自动登录]"
+			}
+			fmt.Printf("  %d. %s%s\n", i+1, a.Username, cmd)
+		}
+		fmt.Println("  +/- 添加/删除角色")
+		fmt.Println("  e  编辑角色")
+		fmt.Print("请选择: ")
+
+		choice := readLine()
+		if choice == "+" {
+			fmt.Print("请输入角色名: ")
+			name := readLine()
+			if name == "" {
+				continue
+			}
+			a := &lib.Account{Username: name}
+			fmt.Print("自动登录命令 (可选，回车跳过): ")
+			if cmd := readLine(); cmd != "" {
+				a.Cmd = cmd
+			}
+			s.Accounts = append(s.Accounts, a)
+			if err := lib.SaveConfig(cfg); err != nil {
+				fmt.Printf("保存失败：%v\n", err)
+			}
+			return a
+		}
+
+		if choice == "-" {
+			fmt.Print("请输入要删除的角色编号: ")
+			idx, err := strconv.Atoi(readLine())
+			if err == nil && idx >= 1 && idx <= len(s.Accounts) {
+				s.Accounts = append(s.Accounts[:idx-1], s.Accounts[idx:]...)
+				lib.SaveConfig(cfg)
+				fmt.Println("已删除")
+			}
+			continue
+		}
+
+		if choice == "e" {
+			fmt.Print("请输入要编辑的角色编号: ")
+			idx, err := strconv.Atoi(readLine())
+			if err == nil && idx >= 1 && idx <= len(s.Accounts) {
+				a := s.Accounts[idx-1]
+				fmt.Printf("自动登录命令 (%s): ", a.Cmd)
+				if cmd := readLine(); cmd != "" {
+					a.Cmd = cmd
+				}
+				lib.SaveConfig(cfg)
+				fmt.Println("已更新")
+			}
+			continue
+		}
+
+		if n, err := strconv.Atoi(choice); err == nil && n >= 1 && n <= len(s.Accounts) {
+			return s.Accounts[n-1]
+		}
+	}
+}
+
 func main() {
 	// 加载配置
 	cfg, err := lib.LoadConfig()
@@ -149,8 +234,9 @@ func main() {
 	for {
 		// 使用配置中的服务器列表
 		s := chooseServer(cfg)
+		account := chooseAccount(s, cfg)
 
-		c, err := lib.NewClient(cfg, s, lib.LSRC)
+		c, err := NewClient(cfg, s, account.Username, lib.LSRC)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			continue
