@@ -236,7 +236,7 @@ func main() {
 		s := chooseServer(cfg)
 		account := chooseAccount(s, cfg)
 
-		c, err := NewClient(cfg, s, account.Username, lib.LSRC)
+		c, err := lib.NewClient(cfg, s, account, lib.LSRC)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			continue
