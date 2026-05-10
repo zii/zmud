@@ -22,8 +22,7 @@ import (
 	//"github.com/peterh/liner"
 	"zmud/lib/liner"
 
-
-	"github.com/hashicorp/golang-lru/v2"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/tidwall/match"
 	"golang.org/x/term"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -42,29 +41,29 @@ const HistoryLimit = 100
 
 // MUD 客户端，管理连接、输入输出和历史命令
 type Client struct {
-	conn         net.Conn          // TCP 连接，与 MUD 服务器的通信管道
-	exit         chan struct{}     // 退出信号通道，服务器断开时触发
-	once         sync.Once         // 确保退出通道只关闭一次
-	tr           *Translator       // 翻译器，将服务器消息翻译为中文
-	server       *Server           // 当前连接的服务器
-	account      *Account          // 当前游戏角色
-	ring         [10]string        // 服务器原始文本流(用于调试翻译)
-	ri           int               // 最新一条原始文本
-	mode         Mode              // 显示模式: LSRC=原文, LTRN=译文, LMIX=双语
-	liner        *liner.State            // 行编辑器，支持历史和编辑
-	cmdHistory   *lru.Cache[string, int64] // 最近使用的命令历史，用于补全排序
-	batchs       []*batch                // 服务器最近响应历史
-	wc           chan string          // 命令发送管道，携带手动/脚本标记
-	rc           chan string       // 读取的命令管道
-	script       *Script           // 当前运行的脚本
-	db           *lmdb.DB          // 别名数据库
-	triggers     map[string]string // 触发器缓存（包括 SKIP）
-	muTrigger    sync.Mutex
-	aliases      map[string]string // 别名缓存，写操作受 muAlias 保护
-	muAlias      sync.RWMutex
-	encoder      transform.Transformer // 编码器，缓存以提升性能
-	scriptPend   bool                  // 脚本中断待确认
-	pendAt       time.Time             // pending 开始时间
+	conn       net.Conn                  // TCP 连接，与 MUD 服务器的通信管道
+	exit       chan struct{}             // 退出信号通道，服务器断开时触发
+	once       sync.Once                 // 确保退出通道只关闭一次
+	tr         *Translator               // 翻译器，将服务器消息翻译为中文
+	server     *Server                   // 当前连接的服务器
+	account    *Account                  // 当前游戏角色
+	ring       [10]string                // 服务器原始文本流(用于调试翻译)
+	ri         int                       // 最新一条原始文本
+	mode       Mode                      // 显示模式: LSRC=原文, LTRN=译文, LMIX=双语
+	liner      *liner.State              // 行编辑器，支持历史和编辑
+	cmdHistory *lru.Cache[string, int64] // 最近使用的命令历史，用于补全排序
+	batchs     []*batch                  // 服务器最近响应历史
+	wc         chan string               // 命令发送管道，携带手动/脚本标记
+	rc         chan string               // 读取的命令管道
+	script     *Script                   // 当前运行的脚本
+	db         *lmdb.DB                  // 别名数据库
+	triggers   map[string]string         // 触发器缓存（包括 SKIP）
+	muTrigger  sync.Mutex
+	aliases    map[string]string // 别名缓存，写操作受 muAlias 保护
+	muAlias    sync.RWMutex
+	encoder    transform.Transformer // 编码器，缓存以提升性能
+	scriptPend bool                  // 脚本中断待确认
+	pendAt     time.Time             // pending 开始时间
 }
 
 // 创建新的客户端实例，初始化所有通道和默认值
@@ -89,6 +88,7 @@ func NewClient(cfg *Config, server *Server, account *Account, mode Mode) (*Clien
 		triggers: make(map[string]string),
 	}
 	c.cmdHistory, _ = lru.New[string, int64](HistoryLimit)
+	c.loadMode()
 	c.loadTriggers()
 	c.loadAliases()
 	c.encoder = c.initEncoder()
@@ -371,6 +371,24 @@ func (c *Client) doSystemCmd(input string) {
 			})
 			fmt.Println("按键已绑定:", key, "->", parts[1])
 		}
+	} else if m, ok := strings.CutPrefix(input, "/mode "); ok {
+		var newMode Mode
+		switch m {
+		case "src":
+			newMode = LSRC
+		case "trn":
+			newMode = LTRN
+		case "mix":
+			newMode = LMIX
+		default:
+			fmt.Println("未知模式:", m, "，可用: src/trn/mix")
+			return
+		}
+		c.setMode(newMode)
+	} else if input == "/mode" {
+		name := c.mode.String()
+		short := map[Mode]string{LSRC: "src", LTRN: "trn", LMIX: "mix"}[c.mode]
+		fmt.Printf("当前模式: %s (%s)\n", name, short)
 	} else if input == "/quit" {
 		fmt.Println("退出游戏")
 		c.quit()
@@ -383,7 +401,11 @@ func (c *Client) setMode(n Mode) {
 	newl := Mode(n)
 	if c.mode != newl {
 		c.mode = newl
-		c.redraw()
+		//c.redraw()
+		c.db.Update(func(tx *lmdb.Tx) error {
+			tx.Set("meta:mode", strconv.Itoa(int(newl)), nil)
+			return nil
+		})
 	}
 }
 
@@ -838,6 +860,20 @@ func (c *Client) loadAliases() {
 			c.aliases[key[6:]] = command
 			return true
 		})
+		return nil
+	})
+}
+
+// loadMode 从 DB 加载上次保存的翻译模式，覆盖默认值
+func (c *Client) loadMode() {
+	if c.db == nil {
+		return
+	}
+	c.db.View(func(tx *lmdb.Tx) error {
+		val, _ := tx.Get("meta:mode")
+		if n, err := strconv.Atoi(val); err == nil {
+			c.mode = Mode(n)
+		}
 		return nil
 	})
 }
