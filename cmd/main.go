@@ -218,6 +218,30 @@ func chooseAccount(s *lib.Server, cfg *lib.Config) *lib.Account {
 	}
 }
 
+// parseAutoArgs 解析命令行参数的 N.M 格式，返回服务器编号和角色编号（从 1 开始）
+// 如果参数不是 N.M 格式或编号越界，两个返回值均为 -1
+// 解析成功时会清掉 os.Args，连接失败后回退到菜单流程
+func parseAutoArgs(cfg *lib.Config) (int, int) {
+	if len(os.Args) <= 1 {
+		return -1, -1
+	}
+	parts := strings.SplitN(os.Args[1], ".", 2)
+	if len(parts) != 2 {
+		return -1, -1
+	}
+	sN, err := strconv.Atoi(parts[0])
+	if err != nil || sN < 1 || sN > len(cfg.Servers) {
+		return -1, -1
+	}
+	s := &cfg.Servers[sN-1]
+	aN, err := strconv.Atoi(parts[1])
+	if err != nil || aN < 1 || aN > len(s.Accounts) {
+		return -1, -1
+	}
+	os.Args = os.Args[:1] // 清掉参数，连接失败后走菜单
+	return sN, aN
+}
+
 func main() {
 	// 加载配置
 	cfg, err := lib.LoadConfig()
@@ -231,10 +255,25 @@ func main() {
 		fmt.Fprintf(os.Stderr, "配置未完成，翻译功能将被禁用。\n")
 	}
 
+	autoServer, autoAccount := parseAutoArgs(cfg)
+
 	for {
 		// 使用配置中的服务器列表
-		s := chooseServer(cfg)
-		account := chooseAccount(s, cfg)
+		var s *lib.Server
+		if autoServer >= 1 {
+			s = &cfg.Servers[autoServer-1]
+			autoServer = -1
+		} else {
+			s = chooseServer(cfg)
+		}
+
+		var account *lib.Account
+		if autoAccount >= 1 {
+			account = s.Accounts[autoAccount-1]
+			autoAccount = -1
+		} else {
+			account = chooseAccount(s, cfg)
+		}
 
 		c, err := lib.NewClient(cfg, s, account, lib.LSRC)
 		if err != nil {
