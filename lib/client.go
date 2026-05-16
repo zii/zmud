@@ -504,7 +504,8 @@ func (c *Client) readInput() {
 	c.loadHistory()
 
 	for c.liner != nil {
-		input, err := c.liner.Prompt("❯ ")
+		//input, err := c.liner.Prompt("❯ ")
+		input, err := c.liner.Prompt("")
 		if err != nil { // EOF 或 Ctrl+C
 			close(c.rc)
 			break
