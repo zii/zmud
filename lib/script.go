@@ -277,6 +277,8 @@ func (s *Script) waitKeyword(keyword string) bool {
 	parts := splitOr(keyword)
 	var subRes []*regexp.Regexp
 	if len(parts) > 1 {
+		// 使用 OR 语法时先清零条件变量，避免残留上一次的匹配编号
+		VARS["C"] = "0"
 		subRes = make([]*regexp.Regexp, len(parts))
 		for i, part := range parts {
 			subRes[i] = makePattern(part)
