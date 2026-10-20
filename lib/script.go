@@ -816,9 +816,26 @@ func (s *Script) execActions(acts string, i *int) bool {
 	return true
 }
 
+// 判断是否为 #N 重复指令，如 #3 e；是则递归执行 N 次并返回 true
+// 非重复指令原样返回 false，交给后续普通命令处理
+func (s *Script) repeatCmd(cmd string) bool {
+	n, sub := matchRepeat(cmd)
+	if sub == cmd {
+		return false
+	}
+	for ; n > 0; n-- {
+		s.executeCmd(sub)
+	}
+	return true
+}
+
 func (s *Script) executeCmd(cmd string) {
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" {
+		return
+	}
+	// #N 重复指令，如 #3 e
+	if s.repeatCmd(cmd) {
 		return
 	}
 	// 关键字等待

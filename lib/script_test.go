@@ -1493,3 +1493,22 @@ func TestRun_IfDoubleEqFalse(t *testing.T) {
 		t.Fatalf("应为 sleep, 实际=[%s]", cmd)
 	}
 }
+
+// #if 动作中使用 #N 重复指令
+func TestRun_IfWithRepeat(t *testing.T) {
+	wc := make(chan string, 10)
+	s := NewScript(wc, nil)
+
+	go s.Run("#if 1=1 #3 n")
+
+	for k := 0; k < 3; k++ {
+		if cmd := <-wc; cmd != "n" {
+			t.Fatalf("第%d条命令应为 n, 实际=[%s]", k+1, cmd)
+		}
+	}
+	select {
+	case cmd := <-wc:
+		t.Fatalf("不应有多余命令, 实际=[%s]", cmd)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
